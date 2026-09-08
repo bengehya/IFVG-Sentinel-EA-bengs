@@ -1,0 +1,11 @@
+*.ex5
+*.ex4
+*.log
+.DS_Store
+MQL5/Files/
+__pycache__/
+*.pyc
+*.ex4
+*.log
+.DS_Store
+MQL5/Files/
