@@ -33,6 +33,10 @@ private:
    SEntryPlan          m_last_plan;
    datetime            m_last_bar;
    string              m_last_diag_fp;
+   double              m_remembered_risk_distance;
+   double              m_remembered_lot;
+   double              m_remembered_entry;
+   double              m_remembered_sl;
 
    void ResetSetup(const ENUM_SETUP_STATE st)
    {
@@ -109,12 +113,42 @@ private:
       m_status = EA_WAITING;
    }
 
+   void RememberPlanRisk()
+   {
+      if(m_last_plan.risk_distance > 0.0)
+      {
+         m_remembered_risk_distance = m_last_plan.risk_distance;
+         m_remembered_lot = m_last_plan.lot;
+         m_remembered_entry = m_last_plan.entry;
+         m_remembered_sl = m_last_plan.sl;
+      }
+   }
+
+   void GoIdle(const string why)
+   {
+      if(m_log != NULL)
+         m_log.Decision("STATE IDLE", why);
+      ResetSetup(ST_IDLE);
+      m_status = EA_WAITING;
+   }
+
+   bool StageWindowExpired(const datetime from, const int max_bars) const
+   {
+      if(m_sym == NULL || m_cfg == NULL)
+         return false;
+      return IFVG_ConfirmationWindowExpired(m_sym.SymbolName(), m_cfg.in.confirmation_tf, from, max_bars);
+   }
+
 public:
    CStateMachine()
    {
       m_status = EA_WAITING;
       m_last_bar = 0;
       m_last_diag_fp = "";
+      m_remembered_risk_distance = 0.0;
+      m_remembered_lot = 0.0;
+      m_remembered_entry = 0.0;
+      m_remembered_sl = 0.0;
       IFVG_ResetSetup(m_setup);
       m_setup.state = ST_IDLE;
    }
@@ -152,19 +186,39 @@ public:
    SSetup Setup() const { return m_setup; }
    SEntryPlan LastPlan() const { return m_last_plan; }
 
+   double RememberedRiskDistance() const { return m_remembered_risk_distance; }
+   double RememberedLot() const { return m_remembered_lot; }
+   double RememberedEntry() const { return m_remembered_entry; }
+   double RememberedSL() const { return m_remembered_sl; }
+
    void ForceCooldownStatus()
    {
       m_status = EA_COOLDOWN;
       m_setup.state = ST_COOLDOWN;
    }
 
-   void Process(const bool cooldown_active)
+   void NotifyManagedPositionClosed()
+   {
+      RememberPlanRisk();
+      if(m_setup.state == ST_ORDER_SENT ||
+         m_setup.state == ST_POSITION_ACTIVE ||
+         m_setup.state == ST_POSITION_CLOSED)
+      {
+         GoIdle("position closed → IDLE");
+      }
+   }
+
+   void Process(const bool cooldown_active, const int open_positions)
    {
       if(cooldown_active)
       {
          m_status = EA_COOLDOWN;
+         m_setup.state = ST_COOLDOWN;
          return;
       }
+
+      if(m_setup.state == ST_COOLDOWN)
+         GoIdle("cooldown expired → IDLE");
 
       const string symbol = m_sym.SymbolName();
       datetime t[];
@@ -177,8 +231,27 @@ public:
 
       if(m_setup.state == ST_ORDER_SENT || m_setup.state == ST_POSITION_ACTIVE)
       {
-         m_status = EA_TRADE_ACTIVE;
-         return;
+         if(open_positions > 0)
+         {
+            m_setup.state = ST_POSITION_ACTIVE;
+            m_status = EA_TRADE_ACTIVE;
+            return;
+         }
+         if(m_setup.state == ST_POSITION_ACTIVE)
+         {
+            RememberPlanRisk();
+            GoIdle("position closed → IDLE");
+         }
+         else if(!new_bar)
+         {
+            m_status = EA_TRADE_ACTIVE;
+            return;
+         }
+         else
+         {
+            RememberPlanRisk();
+            GoIdle("order sent but no position — resume search");
+         }
       }
 
       const bool tick_state = (m_setup.state == ST_WAITING_RETEST ||
@@ -266,6 +339,13 @@ public:
          m_setup.cisd = m_cisd.DetectCISD(symbol, m_setup.sweep);
          if(!m_setup.cisd.valid)
          {
+            const bool expired = (m_setup.cisd.reason == "sweep bar not found") ||
+                                 StageWindowExpired(m_setup.sweep.time, m_cfg.in.cisd_max_bars_after_sweep);
+            if(expired)
+            {
+               Invalidate("CISD not confirmed: " + m_setup.cisd.reason);
+               return;
+            }
             DumpChain("-", "-", "NO TRADE", "CISD not confirmed: " + m_setup.cisd.reason);
             m_status = EA_WAITING;
             return;
@@ -276,6 +356,14 @@ public:
          m_setup.displacement_points = pts;
          if(!m_setup.displacement)
          {
+            const int disp_bars = MathMax(1, m_cfg.in.displacement_min_bars) + 2;
+            const bool expired = (disp_why == "CISD bar not found") ||
+                                 StageWindowExpired(m_setup.cisd.timestamp, disp_bars);
+            if(expired)
+            {
+               Invalidate("DISPLACEMENT FAIL — " + disp_why);
+               return;
+            }
             DumpChain("-", "-", "NO TRADE", "DISPLACEMENT FAIL — " + disp_why);
             m_status = EA_WAITING;
             return;
@@ -290,6 +378,13 @@ public:
          if(!m_fvg.LatestInverted(orig, m_setup.fvg))
          {
             const string why = m_fvg.ExplainNoInvertedFVG(orig);
+            const bool expired = StageWindowExpired(m_setup.sweep.time, m_cfg.in.fvg_max_age_bars);
+            if(expired)
+            {
+               const bool no_fvg = (StringFind(why, "no FVG") >= 0);
+               Invalidate((no_fvg ? "FVG FAIL — " : "INVERSION FAIL — ") + why);
+               return;
+            }
             DumpChain("-", "-", "NO TRADE", "INVERSION FAIL — " + why);
             m_status = EA_WAITING;
             return;
@@ -354,6 +449,7 @@ public:
                       "TRADE", "");
             m_setup.state = ST_ORDER_SENT;
             m_status = EA_TRADE_ACTIVE;
+            RememberPlanRisk();
          }
          else
          {

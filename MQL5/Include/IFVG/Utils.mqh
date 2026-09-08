@@ -200,6 +200,38 @@ bool IFVG_CopyRatesSafe(const string symbol,
    return (got >= count || got > 10);
 }
 
+int IFVG_BarsSince(const string symbol, const ENUM_TIMEFRAMES tf, const datetime from)
+{
+   if(from <= 0)
+      return -1;
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   const int got = CopyRates(symbol, tf, 0, 200, rates);
+   if(got <= 0)
+      return -1;
+   for(int i = 0; i < got; i++)
+   {
+      if(rates[i].time == from)
+         return i;
+      if(rates[i].time < from)
+         return (i > 0 ? i - 1 : 0);
+   }
+   return got;
+}
+
+bool IFVG_ConfirmationWindowExpired(const string symbol,
+                                    const ENUM_TIMEFRAMES tf,
+                                    const datetime from,
+                                    const int max_bars)
+{
+   if(from <= 0 || max_bars <= 0)
+      return true;
+   const int elapsed = IFVG_BarsSince(symbol, tf, from);
+   if(elapsed < 0)
+      return false;
+   return (elapsed >= max_bars);
+}
+
 double IFVG_ATR(const MqlRates &rates[], const int period, const int start_shift = 1)
 {
    if(period <= 0)

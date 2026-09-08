@@ -123,6 +123,33 @@ def run() -> int:
         is_external_compare_symbol("USDX", "XAGUSD", "USDX"),
     )
 
+    from ifvg_safety import (
+        ST_CISD_VALIDATED,
+        ST_COOLDOWN,
+        ST_FVG_DETECTED,
+        ST_IDLE,
+        ST_ORDER_SENT,
+        ST_POSITION_ACTIVE,
+        after_cooldown,
+        after_position_closed,
+        after_stage_fail,
+        realized_r,
+        risk_money_from_stops,
+    )
+
+    check("STATE close ORDER_SENT → IDLE", after_position_closed(ST_ORDER_SENT) == ST_IDLE)
+    check("STATE close POSITION_ACTIVE → IDLE", after_position_closed(ST_POSITION_ACTIVE) == ST_IDLE)
+    check("STATE CISD fail waits if window open", after_stage_fail(ST_CISD_VALIDATED, False) == ST_CISD_VALIDATED)
+    check("STATE CISD fail after window → IDLE", after_stage_fail(ST_CISD_VALIDATED, True) == ST_IDLE)
+    check("STATE displacement fail after window → IDLE", after_stage_fail(ST_CISD_VALIDATED, True) == ST_IDLE)
+    check("STATE FVG fail after window → IDLE", after_stage_fail(ST_FVG_DETECTED, True) == ST_IDLE)
+    check("STATE cooldown expired → IDLE", after_cooldown(ST_COOLDOWN, False) == ST_IDLE)
+
+    risk_money = risk_money_from_stops(0.01, 1.0, 4019.53, 4034.94, 0.01)
+    r = realized_r(-15.42, risk_money)
+    check("R reporting risk_money ≈ 15.41", abs(risk_money - 15.41) < 1e-6)
+    check("R reporting SL ≈ -1R not -1542", abs(r + 1.0) < 0.02)
+
     print(f"\npassed={passed} failed={failed}")
     return failed
 

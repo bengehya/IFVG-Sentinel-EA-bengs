@@ -69,6 +69,16 @@ REQUIRED_SNIPPETS = {
         "ShouldEnterCooldown",
         "CooldownEndFromStart",
         "AllowsOrderOnSymbol",
+        "RiskMoneyFromDistance",
+        "RewardMeetsTarget",
+    ],
+    INCLUDE / "StateMachine.mqh": [
+        "NotifyManagedPositionClosed",
+        "cooldown expired → IDLE",
+        "position closed → IDLE",
+        "CISD not confirmed",
+        "DISPLACEMENT FAIL",
+        "INVERSION FAIL",
     ],
     INCLUDE / "SMTDetector.mqh": [
         "SKIPPED_GOLD_ONLY",
@@ -224,6 +234,22 @@ def run() -> int:
 
     if "GlobalVariableSet" not in (INCLUDE / "Persistence.mqh").read_text(encoding="utf-8"):
         errors.append("cooldown persistence missing Global Variables")
+
+    if "RiskMoneyFromDistance" not in (INCLUDE / "Safety.mqh").read_text(encoding="utf-8"):
+        errors.append("RiskMoneyFromDistance missing")
+
+    if "volume * spec.tick_value" in ea_text and "RiskMoneyFromDistance" not in ea_text:
+        errors.append("old risk_money = volume * tick_value reporting formula still used")
+
+    sm_text = (INCLUDE / "StateMachine.mqh").read_text(encoding="utf-8")
+    if "void Process(const bool cooldown_active, const int open_positions)" not in sm_text:
+        errors.append("StateMachine::Process must take open_positions to unstick after close")
+    if "StageWindowExpired" not in sm_text:
+        errors.append("CISD/Displacement/FVG definitive-fail window missing")
+    if "g_sm.Process(cd, g_pos.CountOpen())" not in ea_text:
+        errors.append("OnTick must pass open position count into Process")
+    if "NotifyManagedPositionClosed" not in ea_text:
+        errors.append("OnTick/OnTradeTransaction must notify SM on close")
 
     print(f"checked {len(sources)} MQL5 sources")
     if errors:

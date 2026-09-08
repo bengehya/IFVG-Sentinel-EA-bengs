@@ -196,3 +196,53 @@ def smt_status_for_mode(gold_only: bool, smt_valid: bool) -> str:
     if gold_only:
         return "SKIPPED_GOLD_ONLY"
     return "PASS" if smt_valid else "FAIL"
+
+
+# --- reporting R (mirrors CIFVGSafety::RiskMoneyFromDistance) ---
+
+def risk_money_from_distance(tick_size: float, tick_value: float, risk_distance: float, volume: float) -> float:
+    if tick_size <= 0.0 or tick_value <= 0.0 or risk_distance <= 0.0 or volume <= 0.0:
+        return 0.0
+    return (risk_distance / tick_size) * tick_value * volume
+
+
+def risk_money_from_stops(tick_size: float, tick_value: float, entry: float, sl: float, volume: float) -> float:
+    return risk_money_from_distance(tick_size, tick_value, abs(entry - sl), volume)
+
+
+def realized_r(profit: float, risk_money: float) -> float:
+    if risk_money <= 0.0:
+        return 0.0
+    return profit / risk_money
+
+
+# --- state-machine lifecycle (not strategy filters) ---
+
+ST_IDLE = "IDLE"
+ST_ORDER_SENT = "ORDER_SENT"
+ST_POSITION_ACTIVE = "POSITION_ACTIVE"
+ST_POSITION_CLOSED = "POSITION_CLOSED"
+ST_CISD_VALIDATED = "CISD_VALIDATED"
+ST_FVG_DETECTED = "FVG_DETECTED"
+ST_COOLDOWN = "COOLDOWN"
+
+
+def after_position_closed(state: str) -> str:
+    if state in (ST_ORDER_SENT, ST_POSITION_ACTIVE, ST_POSITION_CLOSED):
+        return ST_IDLE
+    return state
+
+
+def after_stage_fail(state: str, window_expired: bool) -> str:
+    """A fail stays a fail. Only return to IDLE when the wait window is exhausted."""
+    if window_expired:
+        return ST_IDLE
+    return state
+
+
+def after_cooldown(state: str, cooldown_active: bool) -> str:
+    if cooldown_active:
+        return ST_COOLDOWN
+    if state == ST_COOLDOWN:
+        return ST_IDLE
+    return state

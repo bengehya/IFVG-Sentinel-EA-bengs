@@ -1,6 +1,6 @@
 #property copyright   "IFVG Sentinel"
 #property link        "https://github.com"
-#property version     "1.00"
+#property version     "1.02"
 #property description "IFVG Sentinel EA — mechanical IFVG strategy for Deriv MT5. Discipline over frequency."
 
 #include <IFVG/Constants.mqh>
@@ -331,12 +331,11 @@ void OnTick()
    bool losses[];
    int nclosed = 0;
    g_pos.SyncClosed(losses, nclosed);
+   if(nclosed > 0)
+      g_sm.NotifyManagedPositionClosed();
 
    const bool cd = g_cd.Active(TimeCurrent());
-   if(cd)
-      g_sm.ForceCooldownStatus();
-
-   g_sm.Process(cd);
+   g_sm.Process(cd, g_pos.CountOpen());
 
    static datetime last_dash = 0;
    if(TimeCurrent() != last_dash)
@@ -344,6 +343,57 @@ void OnTick()
       last_dash = TimeCurrent();
       g_dash.Render(g_cfg.in.symbol, g_cfg, g_sm, g_cd, g_pos);
    }
+}
+
+double HistoryDealEntryPrice(const ulong position_id)
+{
+   if(position_id == 0)
+      return 0.0;
+   if(!HistorySelectByPosition(position_id))
+      return 0.0;
+   const int n = HistoryDealsTotal();
+   for(int i = 0; i < n; i++)
+   {
+      const ulong d = HistoryDealGetTicket(i);
+      if(d == 0)
+         continue;
+      if(HistoryDealGetInteger(d, DEAL_ENTRY) == DEAL_ENTRY_IN)
+         return HistoryDealGetDouble(d, DEAL_PRICE);
+   }
+   return 0.0;
+}
+
+double ClosedTradeRiskDistance(const ulong deal, const bool closed_by_sl)
+{
+   double dist = g_sm.RememberedRiskDistance();
+   if(dist > 0.0)
+      return dist;
+
+   const SEntryPlan plan = g_sm.LastPlan();
+   if(plan.risk_distance > 0.0)
+      return plan.risk_distance;
+
+   double entry = g_sm.RememberedEntry();
+   double sl = g_sm.RememberedSL();
+   if(entry <= 0.0 || sl <= 0.0)
+   {
+      if(plan.entry > 0.0)
+         entry = plan.entry;
+      if(plan.sl > 0.0)
+         sl = plan.sl;
+   }
+   if(entry > 0.0 && sl > 0.0)
+      return MathAbs(entry - sl);
+
+   const ulong pos_id = HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+   const double in_px = HistoryDealEntryPrice(pos_id);
+   if(!HistoryDealSelect(deal))
+      return 0.0;
+   if(in_px > 0.0 && sl > 0.0)
+      return MathAbs(in_px - sl);
+   if(in_px > 0.0 && closed_by_sl)
+      return MathAbs(in_px - HistoryDealGetDouble(deal, DEAL_PRICE));
+   return 0.0;
 }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,
@@ -370,11 +420,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    const bool closed_by_sl = (reason == DEAL_REASON_SL);
    const bool is_loss = (profit < 0.0) || closed_by_sl;
 
-   double risk_money = 0.0;
    const double volume = HistoryDealGetDouble(deal, DEAL_VOLUME);
    const SSymbolSpec spec = g_sym.Spec();
-   if(spec.tick_size > 0.0 && spec.tick_value > 0.0)
-      risk_money = volume * spec.tick_value;
+   const double risk_distance = ClosedTradeRiskDistance(deal, closed_by_sl);
+   const double risk_money = CIFVGSafety::RiskMoneyFromDistance(spec, risk_distance, volume);
+   const double r_mult = CIFVGSafety::RealizedR(profit, risk_money);
 
    g_stats.OnClosedDeal(profit, risk_money, is_loss);
    if(closed_by_sl)
@@ -382,8 +432,12 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    else if(profit > 0.0)
       g_cd.OnClosedTrade(false, TimeCurrent());
    g_pos.Snapshot();
+   g_sm.NotifyManagedPositionClosed();
    g_log.Decision("Position closed",
                   "profit=" + DoubleToString(profit, 2) +
+                  " risk=" + DoubleToString(risk_distance, 2) +
+                  " risk_money=" + DoubleToString(risk_money, 2) +
+                  " R=" + DoubleToString(r_mult, 3) +
                   " reason=" + IntegerToString((int)reason) +
                   (is_loss ? " LOSS" : " WIN"));
 }

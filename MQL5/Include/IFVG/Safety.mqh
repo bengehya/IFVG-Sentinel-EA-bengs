@@ -186,6 +186,33 @@ public:
          return (sl > entry && tp < entry);
       return false;
    }
+
+   // Reporting only. Does not change the RR entry gate (RewardMeetsTarget).
+   static double RiskMoneyFromDistance(const SSymbolSpec &spec,
+                                       const double risk_distance,
+                                       const double volume)
+   {
+      if(spec.tick_size <= 0.0 || spec.tick_value <= 0.0)
+         return 0.0;
+      if(risk_distance <= 0.0 || volume <= 0.0)
+         return 0.0;
+      return (risk_distance / spec.tick_size) * spec.tick_value * volume;
+   }
+
+   static double RiskMoneyFromStops(const SSymbolSpec &spec,
+                                    const double entry,
+                                    const double sl,
+                                    const double volume)
+   {
+      return RiskMoneyFromDistance(spec, MathAbs(entry - sl), volume);
+   }
+
+   static double RealizedR(const double profit, const double risk_money)
+   {
+      if(risk_money <= 0.0)
+         return 0.0;
+      return profit / risk_money;
+   }
 };
 
 #endif

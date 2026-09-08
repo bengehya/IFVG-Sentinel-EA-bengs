@@ -23,6 +23,10 @@ IDLE
 
 Toute invalidation critique → SETUP_INVALIDATED → IDLE
 Cooldown 8h → ST_COOLDOWN / EA_COOLDOWN (aucun ordre)
+POSITION_CLOSED (ou ORDER_SENT sans position) → IDLE → nouvelle recherche
+Échec définitif CISD / Displacement / FVG / inversion (fenêtres max-bars déjà configurées) → INVALIDATED → IDLE
+Fin des 8h de cooldown → IDLE → nouvelle recherche
+Un échec n’est jamais promu à l’étape suivante.
 ```
 
 Les états avant `WAITING_RETEST` ne progressent que sur **nouvelle bougie** du timeframe de confirmation. Le retest est évalué à chaque tick / nouvelle bougie M1.

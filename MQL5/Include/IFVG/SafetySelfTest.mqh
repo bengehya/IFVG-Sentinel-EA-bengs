@@ -334,6 +334,74 @@ public:
          }
       }
 
+      // R reporting (29/07 trade geometry) — does not change the RR entry gate
+      {
+         SSymbolSpec spec;
+         IFVG_ResetSymbolSpec(spec);
+         spec.tick_size = 0.01;
+         spec.tick_value = 1.0;
+         spec.valid = true;
+         const double entry = 4019.53;
+         const double sl = 4034.94;
+         const double profit = -15.42;
+         const double volume = 0.01;
+         const double risk_money = CIFVGSafety::RiskMoneyFromStops(spec, entry, sl, volume);
+         const double r = CIFVGSafety::RealizedR(profit, risk_money);
+         const double old_bug_risk = volume * spec.tick_value;
+         const double old_bug_r = profit / old_bug_risk;
+         if(MathAbs(risk_money - 15.41) > 1e-6)
+         {
+            log.Error("R REPORTING TEST FAILED: risk_money=" + DoubleToString(risk_money, 5));
+            failed++;
+         }
+         else if(MathAbs(r + 1.0) > 0.02)
+         {
+            log.Error("R REPORTING TEST FAILED: R=" + DoubleToString(r, 5));
+            failed++;
+         }
+         else if(MathAbs(old_bug_r + 1542.0) > 1.0)
+         {
+            log.Error("R REPORTING TEST FAILED: old-bug baseline unexpected");
+            failed++;
+         }
+         else
+         {
+            log.Info("R REPORTING TEST PASS — SL ≈ -1R (not -1542R)");
+            passed++;
+         }
+         double gate_rr = 0.0;
+         if(!CIFVGSafety::RewardMeetsTarget(entry, sl, 3973.30, 3.0, gate_rr) ||
+            MathAbs(gate_rr - 3.0) > 0.01)
+         {
+            log.Error("RR GATE REGRESSION: entry RR changed");
+            failed++;
+         }
+         else
+         {
+            log.Info("RR GATE UNCHANGED PASS — 1:3.00 still required");
+            passed++;
+         }
+      }
+
+      // Cooldown ends at exactly 8h, then entries are allowed again (IDLE)
+      {
+         const datetime start = D'2026.01.01 00:00';
+         const datetime end = CIFVGSafety::CooldownEndFromStart(start, 8);
+         const datetime expect = start + 8 * 3600;
+         const bool during = CIFVGSafety::IsCooldownActive(start + 8 * 3600 - 1, end);
+         const bool after = CIFVGSafety::IsCooldownActive(end, end);
+         if(end != expect || !during || after)
+         {
+            log.Error("COOLDOWN EXPIRY TEST FAILED");
+            failed++;
+         }
+         else
+         {
+            log.Info("COOLDOWN EXPIRY PASS — 8h then not active (IDLE allowed)");
+            passed++;
+         }
+      }
+
       log.Info("Safety self-test: passed=" + IntegerToString(passed) + " failed=" + IntegerToString(failed));
       return failed;
    }
