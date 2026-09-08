@@ -101,11 +101,13 @@ public:
       Panel(360);
       Label("T", 0, "IFVG SENTINEL", C'201,162,39', 11);
       Label("S", 1, "Status: " + IFVG_StatusToString(st), stclr, 10);
-      Label("SY", 2, "Symbol: " + symbol, clrWhite);
+      Label("SY", 2, "Symbol: " + symbol + (cfg.IsGoldOnly() ? "  [GOLD-ONLY]" : ""), clrWhite);
       Label("B", 3, "HTF Bias: " + IFVG_BiasToString(s.htf_bias), clrWhite);
       Label("L", 4, "Liquidity: " + IFVG_LiqToString(s.liquidity.side), clrWhite);
       Label("SW", 5, "Sweep: " + Flag(s.sweep.valid), s.sweep.valid ? clrLime : clrSilver);
-      Label("SM", 6, "SMT: " + Flag(s.smt.valid), s.smt.valid ? clrLime : clrSilver);
+      Label("SM", 6, "SMT: " + (s.smt.status == SMT_STATUS_SKIPPED_GOLD_ONLY ? "SKIPPED_GOLD_ONLY" :
+                               (s.smt.valid ? "YES" : "NO")),
+            (s.smt.status == SMT_STATUS_SKIPPED_GOLD_ONLY) ? clrGold : (s.smt.valid ? clrLime : clrSilver));
       Label("C", 7, "CISD: " + Flag(s.cisd.valid), s.cisd.valid ? clrLime : clrSilver);
       Label("F", 8, "FVG: " + (s.fvg.id > 0 ? EnumToString(s.fvg.state) : "NO"), clrSilver);
       Label("I", 9, "IFVG: " + (s.ifvg.id > 0 ? EnumToString(s.ifvg.life) : "NO"), clrSilver);

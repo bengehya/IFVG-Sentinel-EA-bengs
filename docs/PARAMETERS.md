@@ -7,6 +7,7 @@ Les plafonds de sécurité du tableau du bas **gagnent toujours** contre l’inp
 | Input | Défaut | Rôle |
 |---|---|---|
 | `InpSymbol` | XAUUSD | Instrument. Chaîne vide / `current` → `_Symbol` |
+| `InpGoldOnlyMode` | true | XAUUSD-only : pas de SMT externe obligatoire, aucun ordre hors symbole |
 | `InpHTF_Timeframe` | H4 | Biais structurel |
 | `InpConfirmation_Timeframe` | M15 | PD, liquidité, sweep, CISD, FVG |
 | `InpEntry_Timeframe` | M1 | Retest |

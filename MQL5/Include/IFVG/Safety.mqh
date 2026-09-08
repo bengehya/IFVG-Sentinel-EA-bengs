@@ -155,6 +155,26 @@ public:
       return (actual_rr + 1e-9 >= target_rr);
    }
 
+   static bool AllowsOrderOnSymbol(const string trading_symbol, const string order_symbol)
+   {
+      if(trading_symbol == "" || order_symbol == "")
+         return false;
+      return (trading_symbol == order_symbol);
+   }
+
+   static bool IsExternalCompareSymbol(const string order_symbol,
+                                       const string smt_symbol1,
+                                       const string smt_symbol2)
+   {
+      if(order_symbol == "")
+         return false;
+      if(smt_symbol1 != "" && order_symbol == smt_symbol1)
+         return true;
+      if(smt_symbol2 != "" && order_symbol == smt_symbol2)
+         return true;
+      return false;
+   }
+
    static bool StopsConsistent(const ENUM_IFVG_DIR dir,
                                const double entry,
                                const double sl,

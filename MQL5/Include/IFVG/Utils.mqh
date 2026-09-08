@@ -99,6 +99,25 @@ string IFVG_LiqToString(const ENUM_LIQ_SIDE side)
    return "NONE";
 }
 
+string IFVG_SmtStatusToString(const ENUM_SMT_STATUS st)
+{
+   switch(st)
+   {
+      case SMT_STATUS_CONFIRMED:         return "PASS";
+      case SMT_STATUS_MISSING:           return "FAIL";
+      case SMT_STATUS_DISABLED:          return "DISABLED";
+      case SMT_STATUS_OPTIONAL_BYPASS:   return "OPTIONAL_BYPASS";
+      case SMT_STATUS_SKIPPED_GOLD_ONLY: return "SKIPPED_GOLD_ONLY";
+      case SMT_STATUS_NONE:
+      default:                           return "NONE";
+   }
+}
+
+string IFVG_Gate(const bool pass)
+{
+   return pass ? "PASS" : "FAIL";
+}
+
 bool IFVG_DirMatchesBias(const ENUM_IFVG_DIR dir, const ENUM_IFVG_BIAS bias)
 {
    if(dir == IFVG_DIR_BUY && bias == IFVG_BIAS_BULLISH)

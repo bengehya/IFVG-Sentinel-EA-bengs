@@ -77,6 +77,7 @@ struct SIFVGInputs
    bool              debug_mode;
    bool              allow_buy;
    bool              allow_sell;
+   bool              gold_only_mode;
 };
 
 class CIFVGConfig
@@ -102,9 +103,23 @@ public:
 
    ENUM_SMT_MODE EffectiveSMTMode() const
    {
+      if(in.gold_only_mode)
+         return SMT_DISABLED;
       if(!in.use_smt_filter)
          return SMT_DISABLED;
       return in.smt_mode;
+   }
+
+   bool IsGoldOnly() const
+   {
+      return in.gold_only_mode;
+   }
+
+   bool SMTIsMandatoryGate() const
+   {
+      if(in.gold_only_mode)
+         return false;
+      return (EffectiveSMTMode() == SMT_REQUIRED);
    }
 };
 

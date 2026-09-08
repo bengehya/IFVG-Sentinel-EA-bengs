@@ -33,6 +33,7 @@
 
 //--- STRATEGY
 input group "=== STRATEGY ==="
+input bool              InpGoldOnlyMode         = true;
 input string            InpSymbol               = "XAUUSD";
 input ENUM_TIMEFRAMES   InpHTF_Timeframe        = PERIOD_H4;
 input ENUM_TIMEFRAMES   InpConfirmation_Timeframe = PERIOD_M15;
@@ -151,6 +152,7 @@ string WorkingSymbol()
 void LoadInputs()
 {
    g_cfg.in.symbol = WorkingSymbol();
+   g_cfg.in.gold_only_mode = InpGoldOnlyMode;
    g_cfg.in.htf = InpHTF_Timeframe;
    g_cfg.in.confirmation_tf = InpConfirmation_Timeframe;
    g_cfg.in.entry_tf = InpEntry_Timeframe;
@@ -220,6 +222,11 @@ int OnInit()
 
    g_log.Init(g_cfg.in.enable_logs, g_cfg.in.debug_mode, g_cfg.in.enable_file_logs, symbol);
    g_log.Info(IFVG_EA_NAME + " v" + IFVG_EA_VERSION + " init on " + symbol);
+   if(g_cfg.IsGoldOnly())
+      g_log.Info("GOLD-ONLY MODE: trading " + symbol +
+                 " only. External SMT (XAGUSD/USDX) is not a mandatory gate. No fake SMT is computed.");
+   else
+      g_log.Info("MULTI-SYMBOL SMT MODE: external compare symbols may be used as a filter, never as tradable instruments.");
    g_log.Info("Magic=" + IntegerToString((int)g_cfg.in.magic) +
               " MaxLot=" + DoubleToString(g_cfg.in.max_lot, 2) +
               " MaxPos=" + IntegerToString(g_cfg.in.max_positions) +

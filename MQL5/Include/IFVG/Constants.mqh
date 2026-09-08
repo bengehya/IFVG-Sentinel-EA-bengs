@@ -6,7 +6,7 @@
 //| Priority: capital safety > lot cap > position cap > cooldown     |
 //+------------------------------------------------------------------+
 #define IFVG_EA_NAME                 "IFVG Sentinel EA"
-#define IFVG_EA_VERSION              "1.0.0"
+#define IFVG_EA_VERSION              "1.0.1"
 #define IFVG_LOG_PREFIX              "[IFVG] "
 
 #define IFVG_SENTINEL_MAGIC          26090817

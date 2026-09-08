@@ -77,9 +77,15 @@ public:
       double actual_rr = 0.0;
       if(!CIFVGSafety::RewardMeetsTarget(plan.entry, sl, tp, m_cfg.in.target_rr, actual_rr))
       {
+         plan.rr_actual = actual_rr;
          plan.reject_reason = "RR insufficient";
          if(m_log != NULL)
+         {
             m_log.NoTrade("RR insufficient");
+            m_log.Chain("RR", "FAIL",
+                        "actual 1:" + DoubleToString(actual_rr, 2) +
+                        " target 1:" + DoubleToString(m_cfg.in.target_rr, 1));
+         }
          return false;
       }
 

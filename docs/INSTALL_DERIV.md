@@ -50,17 +50,62 @@ Si `volume_min > 0.01`, l’EA **refuse de démarrer**. Il ne viole pas le plafo
 5. Cocher `Autoriser le trading live` (même en demo).
 6. Vérifier le dashboard : `IFVG SENTINEL` + status `WAITING` / `ANALYZING`.
 
-## 6. SMT — symboles corrélés
+## 6. Gold-only (défaut Deriv) vs SMT externe
 
-Par défaut :
+**Défaut : `InpGoldOnlyMode = true`.**
+
+Le robot trade **XAUUSD** (ou le nom Deriv exact renseigné dans `InpSymbol`, ex. suffixe). Il ne dépend **pas** de :
+
+- `USDX`
+- `XAGUSD`
+- `DXY`
+- tout autre instrument
+
+Journal au démarrage :
+
+```
+[IFVG] GOLD-ONLY MODE: trading XAUUSD only. External SMT (XAGUSD/USDX) is not a mandatory gate. No fake SMT is computed.
+```
+
+Pendant un setup : `SMT = SKIPPED_GOLD_ONLY`. Ce n’est pas une confirmation SMT. USDX/XAGUSD absents **ne bloquent pas** un setup gold.
+
+Aucun ordre n’est envoyé sur un symbole autre que `InpSymbol`.
+
+### Mode multi-symboles (optionnel / futur)
+
+Si `InpGoldOnlyMode = false`, le filtre SMT historique est conservé :
 
 - `InpSMTSymbol1 = XAGUSD` (corrélation positive)
 - `InpSMTSymbol2 = USDX` (corrélation inverse)
 
-Sur Deriv, DXY n’existe pas toujours. Si le symbole est absent :
+Sur Deriv, `USDX` n’existe souvent pas. Dans ce mode uniquement :
 
-- le SMT **obligatoire** bloque le trade (`NO TRADE — SMT missing`) — comportement voulu
-- soit fournir un symbole Deriv valide, soit passer `InpSMTMode = SMT_OPTIONAL` / `SMT_DISABLED` **en connaissance de cause**
+- SMT **obligatoire** + symbole absent = `NO TRADE — SMT missing`
+- fournir un symbole Deriv valide, ou `SMT_OPTIONAL` / `SMT_DISABLED`
+
+### Journal de chaîne (pas à chaque bougie)
+
+À une transition / un arrêt de setup, le journal peut afficher :
+
+```
+[IFVG] HTF = PASS
+[IFVG] PD ARRAY = PASS
+[IFVG] LIQUIDITY = PASS
+[IFVG] SWEEP = PASS
+[IFVG] SMT = SKIPPED_GOLD_ONLY
+[IFVG] CISD = PASS|FAIL
+[IFVG] DISPLACEMENT = PASS|FAIL
+[IFVG] FVG = PASS|FAIL
+[IFVG] INVERSION = PASS|FAIL
+[IFVG] IFVG = PASS|FAIL
+[IFVG] RETEST = PASS|FAIL
+[IFVG] ENTRY GATES = PASS|FAIL
+[IFVG] RR = PASS|FAIL
+[IFVG] FINAL DECISION = TRADE | NO TRADE
+```
+
+Si inversion échoue, la raison exacte est dans `FINAL DECISION` / `INVERSION FAIL`.
+Si RR échoue : `actual 1:x.xx target 1:y.y`.
 
 ## 7. Persistence du cooldown
 

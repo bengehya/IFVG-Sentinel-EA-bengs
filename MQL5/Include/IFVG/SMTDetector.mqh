@@ -145,11 +145,25 @@ public:
       SSMTResult r;
       IFVG_ResetSMT(r);
 
+      if(m_cfg.IsGoldOnly())
+      {
+         r.valid = false;
+         r.available = false;
+         r.status = SMT_STATUS_SKIPPED_GOLD_ONLY;
+         r.direction = dir;
+         r.reason = "SKIPPED_GOLD_ONLY";
+         if(m_log != NULL)
+            m_log.Decision("SMT = SKIPPED_GOLD_ONLY",
+                           "XAUUSD-only mode — external SMT is not a mandatory gate; no fake SMT");
+         return r;
+      }
+
       const ENUM_SMT_MODE mode = m_cfg.EffectiveSMTMode();
       if(mode == SMT_DISABLED)
       {
          r.valid = true;
          r.available = true;
+         r.status = SMT_STATUS_DISABLED;
          r.direction = dir;
          r.reason = "SMT disabled";
          return r;
@@ -157,6 +171,7 @@ public:
 
       if(ComparePair(primary, m_cfg.in.smt_symbol1, m_cfg.in.smt_corr1, dir, r))
       {
+         r.status = SMT_STATUS_CONFIRMED;
          if(m_log != NULL)
             m_log.Decision("SMT confirmed", r.reason);
          return r;
@@ -165,6 +180,7 @@ public:
       IFVG_ResetSMT(r2);
       if(ComparePair(primary, m_cfg.in.smt_symbol2, m_cfg.in.smt_corr2, dir, r2))
       {
+         r2.status = SMT_STATUS_CONFIRMED;
          if(m_log != NULL)
             m_log.Decision("SMT confirmed", r2.reason);
          return r2;
@@ -174,6 +190,7 @@ public:
       {
          r.valid = true;
          r.available = true;
+         r.status = SMT_STATUS_OPTIONAL_BYPASS;
          r.direction = dir;
          r.reason = "SMT optional — not present, filter bypassed";
          if(m_log != NULL)
@@ -182,6 +199,7 @@ public:
       }
 
       r.valid = false;
+      r.status = SMT_STATUS_MISSING;
       r.reason = "SMT missing";
       if(m_log != NULL)
          m_log.NoTrade("SMT missing");

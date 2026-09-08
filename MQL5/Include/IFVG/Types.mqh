@@ -28,6 +28,16 @@ enum ENUM_SMT_MODE
    SMT_REQUIRED  = 2
 };
 
+enum ENUM_SMT_STATUS
+{
+   SMT_STATUS_NONE              = 0,
+   SMT_STATUS_CONFIRMED         = 1,
+   SMT_STATUS_MISSING           = 2,
+   SMT_STATUS_DISABLED          = 3,
+   SMT_STATUS_OPTIONAL_BYPASS   = 4,
+   SMT_STATUS_SKIPPED_GOLD_ONLY = 5
+};
+
 enum ENUM_ZONE_TYPE
 {
    ZONE_NONE         = 0,
@@ -205,6 +215,7 @@ struct SSMTResult
 {
    bool              valid;
    bool              available;
+   ENUM_SMT_STATUS   status;
    ENUM_IFVG_DIR     direction;
    string            compare_symbol;
    datetime          time;
@@ -335,6 +346,7 @@ void IFVG_ResetSMT(SSMTResult &r)
 {
    r.valid = false;
    r.available = false;
+   r.status = SMT_STATUS_NONE;
    r.direction = IFVG_DIR_NONE;
    r.compare_symbol = "";
    r.time = 0;

@@ -97,6 +97,14 @@ public:
    {
       WriteLine(LOG_INFO, stage + (detail == "" ? "" : ": " + detail));
    }
+
+   void Chain(const string name, const string verdict, const string detail = "")
+   {
+      if(detail == "")
+         WriteLine(LOG_INFO, name + " = " + verdict);
+      else
+         WriteLine(LOG_INFO, name + " = " + verdict + " — " + detail);
+   }
 };
 
 #endif

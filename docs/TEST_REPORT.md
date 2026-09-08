@@ -2,7 +2,7 @@
 
 Date : 2026-09-08  
 Branche : `cursor/ifvg-sentinel-ea-2372`  
-EA : `MQL5/Experts/IFVG_Sentinel.mq5` v1.0.0
+EA : `MQL5/Experts/IFVG_Sentinel.mq5` v1.0.1
 
 ## Environnement
 
@@ -28,9 +28,12 @@ La compilation `.ex5` **doit** être faite localement. Les tests Python verrouil
 | 5 | Setup parfait pendant cooldown | NO TRADE | PASS |
 | 6 | FVG sans inversion | NO TRADE | PASS |
 | 7 | IFVG sans retest | NO TRADE | PASS |
-| 8 | Sweep sans SMT (SMT required) | NO TRADE | PASS |
+| 8 | Sweep sans SMT (SMT required, Gold-only OFF) | NO TRADE | PASS |
 | 9 | RR 1:2.4 vs TargetRR=3 | NO TRADE | PASS |
 | 10 | RR 1:3.2 vs TargetRR=3 | RR gate OK (le reste de la confluence s’applique encore) | PASS |
+| G1 | Gold-only + USDX/XAGUSD absents | ne bloque pas | PASS |
+| G2 | Ordre USDX/XAGUSD | interdit | PASS |
+| G3 | SMT status Gold-only | SKIPPED_GOLD_ONLY | PASS |
 
 Extras : input `MaxLot=0.10` → 0.01 ; `MaxPositions=99` → 2 ; `CooldownHours=4` → 8 ; win reset `ConsecutiveSL=0`.
 
@@ -53,7 +56,7 @@ Extras : input `MaxLot=0.10` → 0.01 ; `MaxPositions=99` → 2 ; `CooldownHours
 | XAUUSD configurable / specs broker auto | Code OK — runtime Deriv à confirmer |
 | Compatible MT5 | Source MQL5 modulaire — **compiler dans MetaEditor** |
 | Compatible Deriv | Detection symbol + filling + volume_min>0.01 = init fail |
-| IFVG / liquidité / sweep / SMT / CISD | Modules dédiés + règles mesurables documentées |
+| SMT / Gold-only | `InpGoldOnlyMode=true` : pas de dépendance USDX/XAGUSD ; `SKIPPED_GOLD_ONLY` |
 | Retest obligatoire | Gate Entry Engine + TEST 7 |
 | RR 1:3 et 1:4 | `TargetRR` input, stats non mélangées |
 | Max 0.01 lot / max 2 positions | Hard-coded |

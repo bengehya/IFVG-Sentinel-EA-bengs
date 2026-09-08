@@ -11,7 +11,9 @@ Discipline > fréquence > profit.
 
 Il exécute mécaniquement la chaîne IFVG :
 
-HTF Context → PD Array → Liquidity → Sweep → SMT → CISD → Displacement → FVG → Inversion → IFVG → Retest → Entry → SL / TP
+HTF Context → PD Array → Liquidity → Sweep → SMT (SKIPPED in Gold-only) → CISD → Displacement → FVG → Inversion → IFVG → Retest → Entry → SL / TP
+
+Par défaut **`InpGoldOnlyMode = true`** : le robot trade XAUUSD uniquement. Il ne dépend pas de USDX/XAGUSD. Le SMT externe n’est **pas** un blocker (`SMT = SKIPPED_GOLD_ONLY`). Aucun faux SMT n’est calculé.
 
 Une condition isolée **ne déclenche jamais** une entrée. Si une condition obligatoire manque : **NO TRADE**.
 

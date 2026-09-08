@@ -103,6 +103,20 @@ Un close au-delà du niveau **sans** retour = break, **pas** un sweep.
 
 ## 5. SMT (filtre, jamais une entrée)
 
+### Mode Gold-only (`InpGoldOnlyMode = true`, défaut Deriv)
+
+Le robot trade **uniquement** le symbole gold configuré (`InpSymbol`, défaut `XAUUSD`).
+
+- Aucune dépendance à `USDX`, `XAGUSD`, `DXY` ou tout autre marché.
+- Aucun `SymbolSelect` sur un symbole externe.
+- Statut journal : **`SMT = SKIPPED_GOLD_ONLY`**.
+- Ce n’est **pas** une confirmation SMT. Aucun SMT intra-XAUUSD n’est inventé.
+- L’absence de USDX/XAGUSD **ne peut pas** invalider un setup gold.
+
+La chaîne obligatoire reste : HTF → PD → Liquidity → Sweep → CISD → Displacement → FVG → Inversion → IFVG → Retest → gates → RR.
+
+### Mode multi-symboles (`InpGoldOnlyMode = false`)
+
 Comparaison des 2 derniers swings confirmés sur le TF de confirmation.
 
 **Corrélation positive (XAU vs XAG) :**
@@ -115,7 +129,17 @@ Comparaison des 2 derniers swings confirmés sur le TF de confirmation.
 - BUY SMT : gold lower low, l’autre **pas** de higher high
 - SELL SMT : gold higher high, l’autre **pas** de lower low
 
-Modes : `DISABLED` / `OPTIONAL` / `REQUIRED` (défaut). Symbole absent + REQUIRED = **NO TRADE**.
+Modes : `DISABLED` / `OPTIONAL` / `REQUIRED`. Symbole absent + SMT required = **NO TRADE**.
+
+Les symboles SMT ne sont **jamais** des instruments tradables. Un ordre hors `InpSymbol` est refusé.
+
+## 5b. Journal de chaîne
+
+Aux transitions (pas à chaque bougie) :
+
+`HTF` / `PD ARRAY` / `LIQUIDITY` / `SWEEP` / `SMT` / `CISD` / `DISPLACEMENT` / `FVG` / `INVERSION` / `IFVG` / `RETEST` / `ENTRY GATES` / `RR` / `FINAL DECISION`
+
+SMT Gold-only = `SKIPPED_GOLD_ONLY`. RR fail inclut actual vs target.
 
 ## 6. CISD — `DetectCISD()`
 
@@ -175,7 +199,7 @@ Dans l’ordre (une seule échec = NO TRADE) :
 2. PD Array actif aligné
 3. liquidité identifiée
 4. sweep confirmé
-5. SMT si obligatoire
+5. SMT si obligatoire (**sauf Gold-only** : `SKIPPED_GOLD_ONLY`, pas un blocker)
 6. CISD
 7. displacement
 8. FVG valide

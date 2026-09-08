@@ -8,7 +8,7 @@ Tous les messages utiles commencent par `[IFVG]`.
 [IFVG] HTF Bias: BULLISH
 [IFVG] Liquidity detected: SELL-SIDE
 [IFVG] Sweep confirmed: SELL-SIDE level=...
-[IFVG] SMT confirmed: XAUUSD LL not confirmed by XAGUSD
+[IFVG] SMT = SKIPPED_GOLD_ONLY: XAUUSD-only mode — external SMT is not a mandatory gate; no fake SMT
 [IFVG] CISD confirmed: bullish CISD close through opposing open and sweep high
 [IFVG] FVG detected: inverted source
 [IFVG] FVG inverted: SELL FVG -> BUY IFVG
@@ -24,7 +24,12 @@ Tous les messages utiles commencent par `[IFVG]`.
 ## Refus (exemples imposés par le brief)
 
 ```
-[IFVG] NO TRADE — SMT missing
+[IFVG] CISD = FAIL — CISD not confirmed
+[IFVG] DISPLACEMENT = FAIL — body sum ... < ATR*mult
+[IFVG] INVERSION = FAIL — opposing FVG exists but no close-through inversion
+[IFVG] RETEST = FAIL — IFVG exists but retest not found
+[IFVG] RR = FAIL — actual 1:2.40 target 1:3.0
+[IFVG] FINAL DECISION = NO TRADE
 [IFVG] NO TRADE — RR insufficient
 [IFVG] NO TRADE — 2 positions already open
 [IFVG] NO TRADE — 8H cooldown active

@@ -72,7 +72,8 @@ Le custom criterion `OnTester` combine win rate × profit factor × total R. Il 
 
 ## Limites du tester
 
-- SMT : le symbole corrélé doit être disponible dans l’historique du tester. Sinon SMT required = 0 trade. C’est conforme.
+- SMT : en **Gold-only** (défaut), l’absence de USDX/XAGUSD ne produit plus 0 trade par `SMT missing`. La chaîne s’arrête ensuite sur CISD / displacement / FVG / inversion / IFVG / retest — lisible dans le journal `CHAIN`.
+- Mode multi-symboles (`InpGoldOnlyMode=false`) : le symbole corrélé doit exister dans l’historique. Sinon SMT required = 0 trade.
 - Deriv ticks ≠ every-tick modeling quality. Un forward demo reste obligatoire.
 - Les Global Variables du tester ne sont pas celles du terminal live. Tester le redémarrage **en demo**, pas seulement en tester.
 

@@ -182,6 +182,7 @@ public:
          cfg.in.smt_mode = SMT_REQUIRED;
          cfg.in.allow_buy = true;
          cfg.in.allow_sell = true;
+         cfg.in.gold_only_mode = false;
          const SGateResult g = CSetupValidator::ValidateConfluence(s, cfg, true, 0, 10, true, true);
          if(g.passed)
          {
@@ -251,6 +252,84 @@ public:
          else
          {
             log.Info("MAX POSITIONS PASS — input 99 still capped at 2");
+            passed++;
+         }
+      }
+
+      // GOLD-ONLY — USDX/XAGUSD absence must not block
+      {
+         SSetup s;
+         IFVG_ResetSetup(s);
+         s.htf_bias = IFVG_BIAS_BULLISH;
+         s.direction = IFVG_DIR_BUY;
+         s.liquidity.active = true;
+         s.sweep.valid = true;
+         s.smt.valid = false;
+         s.smt.status = SMT_STATUS_SKIPPED_GOLD_ONLY;
+         s.smt.reason = "SKIPPED_GOLD_ONLY";
+         s.cisd.valid = true;
+         s.displacement = true;
+         s.fvg.id = 1;
+         s.fvg.state = FVG_INVERTED;
+         s.ifvg.id = 1;
+         s.ifvg.life = IFVG_LIFE_RETEST;
+         CIFVGConfig cfg;
+         cfg.in.max_positions = 2;
+         cfg.in.max_spread_points = 50;
+         cfg.in.use_smt_filter = true;
+         cfg.in.smt_mode = SMT_REQUIRED;
+         cfg.in.smt_symbol1 = "XAGUSD";
+         cfg.in.smt_symbol2 = "USDX";
+         cfg.in.allow_buy = true;
+         cfg.in.allow_sell = true;
+         cfg.in.gold_only_mode = true;
+         cfg.in.symbol = "XAUUSD";
+         if(cfg.SMTIsMandatoryGate())
+         {
+            log.Error("GOLD-ONLY TEST FAILED: SMT still mandatory");
+            failed++;
+         }
+         else
+         {
+            log.Info("GOLD-ONLY GATE PASS — SMT is not mandatory");
+            passed++;
+         }
+         const SGateResult g = CSetupValidator::ValidateConfluence(s, cfg, true, 0, 10, true, true);
+         if(!g.passed)
+         {
+            log.Error("GOLD-ONLY TEST FAILED: setup blocked (" + g.reason + ")");
+            failed++;
+         }
+         else
+         {
+            log.Info("GOLD-ONLY TEST PASS — USDX/XAGUSD absence does not block");
+            passed++;
+         }
+         if(s.smt.status != SMT_STATUS_SKIPPED_GOLD_ONLY)
+         {
+            log.Error("GOLD-ONLY TEST FAILED: SMT status is not SKIPPED_GOLD_ONLY");
+            failed++;
+         }
+         else
+         {
+            log.Info("GOLD-ONLY TEST PASS — SMT = SKIPPED_GOLD_ONLY");
+            passed++;
+         }
+         if(CIFVGSafety::AllowsOrderOnSymbol("XAUUSD", "USDX") ||
+            CIFVGSafety::AllowsOrderOnSymbol("XAUUSD", "XAGUSD") ||
+            CIFVGSafety::IsExternalCompareSymbol("USDX", "XAGUSD", "USDX") == false)
+         {
+            log.Error("GOLD-ONLY TEST FAILED: external symbol order policy");
+            failed++;
+         }
+         else if(!CIFVGSafety::AllowsOrderOnSymbol("XAUUSD", "XAUUSD"))
+         {
+            log.Error("GOLD-ONLY TEST FAILED: XAUUSD order should be allowed");
+            failed++;
+         }
+         else
+         {
+            log.Info("GOLD-ONLY TEST PASS — no external-symbol orders");
             passed++;
          }
       }

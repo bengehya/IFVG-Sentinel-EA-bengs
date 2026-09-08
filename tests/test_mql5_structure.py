@@ -58,6 +58,7 @@ REQUIRED_SNIPPETS = {
         "InpMaxPositions",
         "InpConsecutiveSLLimit",
         "InpCooldownHours",
+        "InpGoldOnlyMode",
         "OnTradeTransaction",
         "OnTester",
     ],
@@ -67,6 +68,11 @@ REQUIRED_SNIPPETS = {
         "CanOpenNewPosition",
         "ShouldEnterCooldown",
         "CooldownEndFromStart",
+        "AllowsOrderOnSymbol",
+    ],
+    INCLUDE / "SMTDetector.mqh": [
+        "SKIPPED_GOLD_ONLY",
+        "IsGoldOnly",
     ],
     INCLUDE / "Constants.mqh": [
         "#define IFVG_HARD_MAX_LOT            0.01",

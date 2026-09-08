@@ -112,7 +112,10 @@ public:
       if(!gate.passed)
       {
          if(m_log != NULL)
+         {
             m_log.NoTrade(gate.reason);
+            m_log.Chain("ENTRY GATES", "FAIL", gate.reason);
+         }
          setup.last_reject = gate.reason;
          return false;
       }
@@ -121,8 +124,15 @@ public:
       if(!m_risk.BuildPlan(m_sym.Spec(), *m_sym, setup, entry, plan))
       {
          setup.last_reject = plan.reject_reason;
+         if(m_log != NULL && StringFind(plan.reject_reason, "RR") < 0)
+            m_log.Chain("ENTRY GATES", "FAIL", plan.reject_reason);
          return false;
       }
+
+      if(m_log != NULL)
+         m_log.Chain("RR", "PASS",
+                     "actual 1:" + DoubleToString(plan.rr_actual, 2) +
+                     " target 1:" + DoubleToString(m_cfg.in.target_rr, 1));
 
       if(plan.lot > IFVG_HARD_MAX_LOT)
       {

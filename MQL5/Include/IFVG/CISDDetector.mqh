@@ -145,14 +145,22 @@ public:
 
    bool DetectDisplacement(const string symbol,
                            const SCISDResult &cisd,
-                           double &points)
+                           double &points,
+                           string &why)
    {
       points = 0.0;
+      why = "";
       if(!cisd.valid)
+      {
+         why = "no valid CISD";
          return false;
+      }
       MqlRates rates[];
       if(!IFVG_CopyRatesSafe(symbol, m_cfg.in.confirmation_tf, 40, rates))
+      {
+         why = "displacement rates unavailable";
          return false;
+      }
       const double atr = IFVG_ATR(rates, 14, 1);
       int cisd_i = -1;
       const int n = ArraySize(rates);
@@ -165,7 +173,10 @@ public:
          }
       }
       if(cisd_i < 0)
+      {
+         why = "CISD bar not found";
          return false;
+      }
 
       const int bars = MathMax(1, m_cfg.in.displacement_min_bars);
       double move = 0.0;
@@ -181,7 +192,19 @@ public:
          counted++;
       }
       points = move;
-      return (atr > 0.0 && move >= atr * m_cfg.in.displacement_atr_mult);
+      if(atr <= 0.0)
+      {
+         why = "ATR unavailable";
+         return false;
+      }
+      const double need = atr * m_cfg.in.displacement_atr_mult;
+      if(move < need)
+      {
+         why = "body sum " + DoubleToString(move, 5) + " < ATR*mult " + DoubleToString(need, 5);
+         return false;
+      }
+      why = "";
+      return true;
    }
 };
 

@@ -38,11 +38,17 @@ Pourquoi A : reproductible, sans indicateur externe, invalidable.
 
 ## AMBIGUOUS_RULE 4 — SMT gold vs DXY / XAG
 
-**Ambiguïté :** quelle paire, quel décalage de swing, DXY souvent absent chez Deriv.
+**Ambiguïté :** quelle paire, quel décalage de swing, DXY / `USDX` souvent **absent** chez Deriv.
 
-**Choix retenu :** deux swings confirmés, fenêtre `smt_lookback`. XAG = corrélation positive. `USDX` / DXY = inverse. Symbole manquant + SMT required = no trade (pas de faux SMT).
+**Choix retenu (Deriv / XAUUSD-only) :** `InpGoldOnlyMode = true` par défaut.
 
-Le nom Deriv exact de DXY **doit** être fourni par l’utilisateur si différent de `USDX`.
+- True inter-market SMT **exige** un second marché. Sans ce marché, le robot **n’invente pas** un SMT intra-XAUUSD.
+- En Gold-only, le SMT externe n’est **pas** un gate obligatoire. Journal : `SMT = SKIPPED_GOLD_ONLY`.
+- Ce n’est **pas** une confirmation SMT. Ce n’est **pas** un remplacement silencieux par une autre condition.
+
+**Mode multi-symboles** (`InpGoldOnlyMode = false`) : comportement historique — deux swings confirmés, fenêtre `smt_lookback`. XAG = corrélation positive. `USDX` / DXY = inverse. Symbole manquant + SMT required = no trade (pas de faux SMT).
+
+Le nom Deriv exact de DXY **doit** être fourni par l’utilisateur seulement si Gold-only est désactivé.
 
 ---
 

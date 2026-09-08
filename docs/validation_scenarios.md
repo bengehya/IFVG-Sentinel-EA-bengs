@@ -43,9 +43,11 @@ Sur un graphe avec FVG non inversée : pas d’ordre. Log `NO TRADE` / état blo
 
 IFVG créée, prix qui n’est pas revenu dans la zone : pas d’ordre (`Waiting for retest`).
 
-## S8 — SMT required
+## S8 — SMT
 
-Retirer / invalider le symbole SMT. `NO TRADE — SMT missing`.
+**Gold-only (défaut) :** USDX/XAGUSD absents. Journal `SMT = SKIPPED_GOLD_ONLY`. Le setup n’est **pas** invalidé pour SMT. Aucun ordre sur USDX/XAGUSD.
+
+**Multi-symboles** (`InpGoldOnlyMode=false`, SMT required) : retirer le symbole SMT → `NO TRADE — SMT missing`.
 
 ## S9 — RR insuffisant
 

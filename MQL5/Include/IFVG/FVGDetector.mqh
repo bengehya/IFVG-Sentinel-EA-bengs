@@ -235,6 +235,33 @@ public:
       return false;
    }
 
+   string ExplainNoInvertedFVG(const ENUM_IFVG_DIR original_dir) const
+   {
+      int opposing_plain = 0;
+      int inverted_wrong_dir = 0;
+      for(int i = 0; i < m_count; i++)
+      {
+         if(!m_fvgs[i].active)
+            continue;
+         if(m_fvgs[i].direction == original_dir)
+         {
+            if(m_fvgs[i].state == FVG_CREATED || m_fvgs[i].state == FVG_TESTED)
+               opposing_plain++;
+         }
+         else if(m_fvgs[i].state == FVG_INVERTED)
+            inverted_wrong_dir++;
+      }
+      if(opposing_plain > 0)
+         return "opposing FVG exists but no close-through inversion";
+      if(inverted_wrong_dir > 0)
+         return "inverted FVG exists but wrong direction for this setup";
+      if(HasAnyActiveFVG())
+         return "FVG present but not opposing / not inverted";
+      if(m_count <= 0)
+         return "no FVG detected";
+      return "no inverted opposing FVG";
+   }
+
    int Count() const { return m_count; }
    SFVG At(const int i) const { return m_fvgs[i]; }
 };

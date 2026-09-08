@@ -34,6 +34,16 @@ private:
          reason = "symbol unavailable";
          return false;
       }
+      if(!CIFVGSafety::AllowsOrderOnSymbol(m_cfg.in.symbol, spec.symbol))
+      {
+         reason = "external symbol orders are forbidden";
+         return false;
+      }
+      if(CIFVGSafety::IsExternalCompareSymbol(spec.symbol, m_cfg.in.smt_symbol1, m_cfg.in.smt_symbol2))
+      {
+         reason = "SMT compare symbol is not tradable by this EA";
+         return false;
+      }
       if(spec.trade_mode == SYMBOL_TRADE_MODE_CLOSEONLY || spec.trade_mode == SYMBOL_TRADE_MODE_DISABLED)
       {
          reason = "market closed / trading disabled on symbol";

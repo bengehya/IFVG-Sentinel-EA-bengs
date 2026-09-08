@@ -51,8 +51,7 @@ public:
       if(!s.sweep.valid)
          return Fail("liquidity sweep not confirmed");
 
-      const ENUM_SMT_MODE smt_mode = cfg.EffectiveSMTMode();
-      if(smt_mode == SMT_REQUIRED && !s.smt.valid)
+      if(cfg.SMTIsMandatoryGate() && !s.smt.valid)
          return Fail("SMT missing");
 
       if(!s.cisd.valid)

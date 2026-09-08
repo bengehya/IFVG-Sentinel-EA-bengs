@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ifvg_safety import (
     FVG_CREATED,
     IFVG_WAITING,
+    allows_order_on_symbol,
     can_open_new_position,
     clamp_lot_hard_cap,
     clamp_lot_input,
@@ -18,13 +19,16 @@ from ifvg_safety import (
     cooldown_end_from_start,
     default_cfg,
     is_cooldown_active,
+    is_external_compare_symbol,
     on_position_closed_sl,
     on_position_closed_win,
     perfect_buy_setup,
     reward_meets_target,
     should_enter_cooldown,
+    smt_status_for_mode,
     validate_confluence,
 )
+from ifvg_safety import SMT_REQUIRED
 
 
 def run() -> int:
@@ -98,6 +102,26 @@ def run() -> int:
     s = perfect_buy_setup()
     ok, reason = validate_confluence(s, cfg, False, 0, 10, True, True)
     check("Perfect setup during cooldown blocked", (not ok) and "cooldown" in reason.lower())
+
+    gold_cfg = default_cfg()
+    gold_cfg["gold_only_mode"] = True
+    gold_cfg["smt_mode"] = SMT_REQUIRED
+    s = perfect_buy_setup()
+    s["smt_valid"] = False
+    ok, reason = validate_confluence(s, gold_cfg, True, 0, 10, True, True)
+    check("GOLD-ONLY USDX unavailable does not block", ok)
+    check("GOLD-ONLY XAGUSD unavailable does not block", ok)
+    check(
+        "GOLD-ONLY SMT status SKIPPED_GOLD_ONLY",
+        smt_status_for_mode(True, False) == "SKIPPED_GOLD_ONLY",
+    )
+    check("GOLD-ONLY no USDX orders", not allows_order_on_symbol("XAUUSD", "USDX"))
+    check("GOLD-ONLY no XAGUSD orders", not allows_order_on_symbol("XAUUSD", "XAGUSD"))
+    check("GOLD-ONLY XAUUSD orders allowed", allows_order_on_symbol("XAUUSD", "XAUUSD"))
+    check(
+        "GOLD-ONLY USDX is external compare symbol",
+        is_external_compare_symbol("USDX", "XAGUSD", "USDX"),
+    )
 
     print(f"\npassed={passed} failed={failed}")
     return failed

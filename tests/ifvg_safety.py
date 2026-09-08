@@ -130,7 +130,9 @@ def validate_confluence(setup: dict, cfg: dict, cooldown_ok: bool, open_position
         return False, "liquidity not identified"
     if not setup["sweep_valid"]:
         return False, "liquidity sweep not confirmed"
-    if cfg["smt_mode"] == SMT_REQUIRED and not setup["smt_valid"]:
+    if cfg.get("gold_only_mode"):
+        pass
+    elif cfg.get("smt_mode") == SMT_REQUIRED and not setup.get("smt_valid"):
         return False, "SMT missing"
     if not setup["cisd_valid"]:
         return False, "CISD not confirmed"
@@ -171,4 +173,26 @@ def default_cfg() -> dict:
         "max_positions": 2,
         "max_spread_points": 50,
         "smt_mode": SMT_REQUIRED,
+        "gold_only_mode": False,
+        "symbol": "XAUUSD",
+        "smt_symbol1": "XAGUSD",
+        "smt_symbol2": "USDX",
     }
+
+
+def allows_order_on_symbol(trading_symbol: str, order_symbol: str) -> bool:
+    if not trading_symbol or not order_symbol:
+        return False
+    return trading_symbol == order_symbol
+
+
+def is_external_compare_symbol(order_symbol: str, smt_symbol1: str, smt_symbol2: str) -> bool:
+    if not order_symbol:
+        return False
+    return order_symbol in (smt_symbol1, smt_symbol2) and order_symbol != ""
+
+
+def smt_status_for_mode(gold_only: bool, smt_valid: bool) -> str:
+    if gold_only:
+        return "SKIPPED_GOLD_ONLY"
+    return "PASS" if smt_valid else "FAIL"

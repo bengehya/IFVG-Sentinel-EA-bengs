@@ -15,6 +15,7 @@ Les inputs existent pour adapter le broker et les timeframes. Ils ne permettent 
 ## Profil recommandé petits comptes (Deriv gold)
 
 ```
+GoldOnlyMode            = true
 Symbol                  = XAUUSD          (ou le nom exact Deriv)
 HTF                     = H4
 Confirmation            = M15
@@ -66,11 +67,15 @@ Les fenêtres nommées London / NY / Asian sont évaluées en **UTC** (sans DST)
 
 ## SMT
 
+`InpGoldOnlyMode = true` (défaut Deriv) : SMT externe **non obligatoire**. Journal `SMT = SKIPPED_GOLD_ONLY`. Pas de faux SMT. USDX/XAGUSD absents ne bloquent pas.
+
+`InpGoldOnlyMode = false` conserve l’architecture multi-symboles :
+
 `InpUseSMTFilter = false` désactive le SMT (équivalent `SMT_DISABLED`).
 
 Sinon `InpSMTMode` :
 
-- `SMT_REQUIRED` (défaut) — pas de SMT = pas de trade
+- `SMT_REQUIRED` (défaut multi-symboles) — pas de SMT = pas de trade
 - `SMT_OPTIONAL` — le SMT confirme s’il est là, n’bloque pas s’il est absent
 - `SMT_DISABLED` — ignoré
 
@@ -79,5 +84,5 @@ Sinon `InpSMTMode` :
 - Augmenter le lot après une perte
 - Désactiver le cooldown « pour voir plus de trades »
 - Passer `TargetRR` sous 3 « pour que ça trade »
-- Enlever le SMT obligatoire uniquement pour augmenter la fréquence
+- Enlever le SMT obligatoire uniquement pour augmenter la fréquence (en Gold-only, le SMT externe n’est déjà plus un blocker ; ne pas inventer un SMT de remplacement)
 - Attacher l’EA sur un compte réel avant backtest + demo + forward test
