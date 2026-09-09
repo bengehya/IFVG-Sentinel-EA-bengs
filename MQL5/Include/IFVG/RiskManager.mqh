@@ -89,19 +89,78 @@ public:
          return false;
       }
 
-      string lot_reject = "";
-      const double lot = CIFVGSafety::ApplyVolumeConstraints(spec, IFVG_HARD_MAX_LOT, m_cfg.in.max_lot, lot_reject);
-      if(lot <= 0.0)
-      {
-         plan.reject_reason = (lot_reject == "" ? "invalid volume" : lot_reject);
-         return false;
-      }
+      const double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      const double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      const double free_margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      const double max_risk = m_cfg.AllowedRiskMoney(balance);
+      const string mode = (m_cfg.RiskMode() == RISK_PERCENT ? "PERCENT" : "FIXED_MONEY");
 
+      string lot_reject = "";
+      double theoretical = 0.0;
+      double actual_risk = 0.0;
+      const double lot = CIFVGSafety::LotFromAllowedRisk(spec, risk, max_risk,
+                                                            theoretical, actual_risk, lot_reject);
+      plan.theoretical_lot = theoretical;
+      plan.expected_risk_money = actual_risk;
+      plan.lot = lot;
       plan.sl = sl;
       plan.tp = tp;
       plan.risk_distance = risk;
       plan.rr_actual = actual_rr;
-      plan.lot = lot;
+
+      const ENUM_ORDER_TYPE otype = (setup.direction == IFVG_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      double margin_req = 0.0;
+      string margin_reject = "";
+      bool margin_ok = false;
+      if(lot > 0.0)
+         margin_ok = CIFVGSafety::MarginIsSufficient(spec.symbol, otype, lot, plan.entry,
+                                                    free_margin, margin_req, margin_reject);
+      plan.margin_required = margin_req;
+
+      string decision = "TRADE";
+      string reason = "";
+      if(lot <= 0.0)
+      {
+         decision = "NO_TRADE";
+         reason = (lot_reject == "" ? "invalid volume" : lot_reject);
+      }
+      else if(!margin_ok)
+      {
+         decision = "NO_TRADE";
+         reason = (margin_reject == "" ? "insufficient margin" : margin_reject);
+      }
+
+      if(m_log != NULL)
+      {
+         m_log.Risk("Balance=" + DoubleToString(balance, 2));
+         m_log.Risk("Equity=" + DoubleToString(equity, 2));
+         m_log.Risk("RiskMode=" + mode);
+         m_log.Risk("MaxRisk=" + DoubleToString(max_risk, 2));
+         m_log.Risk("Entry=" + DoubleToString(plan.entry, spec.digits));
+         m_log.Risk("SL=" + DoubleToString(sl, spec.digits));
+         m_log.Risk("SLDistance=" + DoubleToString(risk, spec.digits));
+         m_log.Risk("TheoreticalLot=" + DoubleToString(theoretical, 3));
+         m_log.Risk("FinalLot=" + DoubleToString(lot, 3));
+         m_log.Risk("ActualRisk=" + DoubleToString(actual_risk, 2));
+         m_log.Risk("MarginRequired=" + DoubleToString(margin_req, 2));
+         m_log.Risk("FreeMargin=" + DoubleToString(free_margin, 2));
+         if(decision == "TRADE")
+            m_log.Risk("Decision=TRADE");
+         else
+            m_log.Risk("Decision=NO_TRADE Reason=" +
+                       (reason == "minimum lot exceeds risk limit" ? "MIN_LOT_EXCEEDS_RISK_LIMIT" :
+                        (reason == "insufficient margin" ? "INSUFFICIENT_MARGIN" :
+                         (reason == "calculated lot below broker minimum" ? "LOT_BELOW_BROKER_MINIMUM" : reason))));
+      }
+
+      if(decision != "TRADE")
+      {
+         plan.reject_reason = reason;
+         if(m_log != NULL)
+            m_log.NoTrade(reason);
+         return false;
+      }
+
       plan.valid = true;
       if(m_log != NULL)
       {

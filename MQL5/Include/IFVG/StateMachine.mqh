@@ -113,6 +113,57 @@ private:
       m_status = EA_WAITING;
    }
 
+   void InvalidateExpiredIFVG()
+   {
+      const ulong sid = m_setup.setup_id;
+      if(m_log != NULL)
+      {
+         m_log.Info("EXPIRED — SetupID=" + IntegerToString((long)sid));
+         m_log.State("INVALIDATE — reason=IFVG_VALIDITY_EXPIRED");
+      }
+      m_setup.last_reject = "IFVG_VALIDITY_EXPIRED";
+      m_setup.ifvg.life = IFVG_LIFE_EXPIRED;
+      if(m_ifvg != NULL)
+         m_ifvg.MarkExpired(m_setup.ifvg);
+      if(m_stats != NULL)
+         m_stats.OnRejected();
+      if(m_log != NULL)
+         m_log.State("CLEAR ACTIVE SETUP");
+      ResetSetup(ST_IDLE);
+      m_status = EA_WAITING;
+      if(m_log != NULL)
+         m_log.State("IDLE — waiting for new setup");
+   }
+
+   bool ExpireActiveSetupIfNeeded()
+   {
+      if(m_setup.ifvg.id == 0)
+         return false;
+      if(m_ifvg == NULL)
+         return false;
+      if(!m_ifvg.ValidityElapsed(m_setup.ifvg, TimeCurrent()))
+         return false;
+      InvalidateExpiredIFVG();
+      return true;
+   }
+
+   void LogWaitingForRetestOnce()
+   {
+      const string fp = "WAITING_FOR_RETEST|" + IntegerToString((long)m_setup.setup_id);
+      if(fp == m_last_diag_fp)
+         return;
+      m_last_diag_fp = fp;
+      if(m_log != NULL)
+         m_log.Decision("WAITING_FOR_RETEST", "SetupID=" + IntegerToString((long)m_setup.setup_id));
+   }
+
+   void ResumeWaitingForRetest()
+   {
+      m_setup.state = ST_WAITING_RETEST;
+      m_status = EA_SETUP_FOUND;
+      LogWaitingForRetestOnce();
+   }
+
    void RememberPlanRisk()
    {
       if(m_last_plan.risk_distance > 0.0)
@@ -222,7 +273,7 @@ public:
 
       const string symbol = m_sym.SymbolName();
       datetime t[];
-      if(CopyTime(symbol, m_cfg.in.confirmation_tf, 0, 1, t) <= 0)
+      if(!IFVG_CopyTimeSafe(symbol, m_cfg.in.confirmation_tf, 0, 1, t))
          return;
 
       const bool new_bar = (t[0] != m_last_bar);
@@ -258,6 +309,9 @@ public:
                                m_setup.state == ST_RETEST_DETECTED ||
                                m_setup.state == ST_ENTRY_VALIDATION);
       if(!new_bar && !tick_state)
+         return;
+
+      if(tick_state && ExpireActiveSetupIfNeeded())
          return;
 
       m_status = EA_ANALYZING;
@@ -411,9 +465,12 @@ public:
             return;
          }
          m_ifvg.MarkWaiting(m_setup.ifvg);
-         DumpChain("FAIL", "-", "NO TRADE", "IFVG exists — waiting for valid retest");
          m_setup.state = ST_WAITING_RETEST;
          m_status = EA_SETUP_FOUND;
+         if(ExpireActiveSetupIfNeeded())
+            return;
+         LogWaitingForRetestOnce();
+         DumpChain("FAIL", "-", "NO TRADE", "IFVG exists — waiting for valid retest");
       }
 
       if(m_setup.state == ST_WAITING_RETEST)
@@ -421,13 +478,18 @@ public:
          m_status = EA_SETUP_FOUND;
          if(!m_ifvg.UpdateRetest(symbol, m_setup.ifvg))
          {
-            if(m_setup.ifvg.life == IFVG_LIFE_INVALIDATED || m_setup.ifvg.life == IFVG_LIFE_EXPIRED)
+            if(m_setup.ifvg.life == IFVG_LIFE_EXPIRED)
+            {
+               InvalidateExpiredIFVG();
+               return;
+            }
+            if(m_setup.ifvg.life == IFVG_LIFE_INVALIDATED)
             {
                DumpChain("FAIL", "-", "NO TRADE", "IFVG invalidated/expired before retest");
                Invalidate("IFVG invalidated before retest");
+               return;
             }
-            else
-               Diag("RETEST", "FAIL", "IFVG exists but retest not found");
+            LogWaitingForRetestOnce();
             return;
          }
          m_setup.state = ST_RETEST_DETECTED;
@@ -435,11 +497,14 @@ public:
 
       if(m_setup.state == ST_RETEST_DETECTED)
       {
+         m_last_diag_fp = "RETEST_DETECTED|" + IntegerToString((long)m_setup.setup_id);
          m_setup.state = ST_ENTRY_VALIDATION;
       }
 
       if(m_setup.state == ST_ENTRY_VALIDATION)
       {
+         if(ExpireActiveSetupIfNeeded())
+            return;
          if(m_stats != NULL)
             m_stats.OnValidSetup();
          if(m_entry.TryEnter(m_setup, m_last_plan))
@@ -453,6 +518,17 @@ public:
          }
          else
          {
+            if(m_setup.ifvg.life == IFVG_LIFE_EXPIRED ||
+               StringFind(m_setup.last_reject, "validity period elapsed") >= 0)
+            {
+               InvalidateExpiredIFVG();
+               return;
+            }
+            if(CIFVGManager::IsWaitingForRetestReason(m_setup.last_reject))
+            {
+               ResumeWaitingForRetest();
+               return;
+            }
             if(m_stats != NULL)
                m_stats.OnRejected();
             const string rej = m_setup.last_reject;

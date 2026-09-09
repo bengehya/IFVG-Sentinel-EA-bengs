@@ -59,6 +59,8 @@ REQUIRED_SNIPPETS = {
         "InpConsecutiveSLLimit",
         "InpCooldownHours",
         "InpGoldOnlyMode",
+        "InpUseRiskPercent",
+        "InpRiskMoney",
         "OnTradeTransaction",
         "OnTester",
     ],
@@ -71,6 +73,9 @@ REQUIRED_SNIPPETS = {
         "AllowsOrderOnSymbol",
         "RiskMoneyFromDistance",
         "RewardMeetsTarget",
+        "LotFromAllowedRisk",
+        "AllowedRiskMoney",
+        "MarginIsSufficient",
     ],
     INCLUDE / "StateMachine.mqh": [
         "NotifyManagedPositionClosed",
@@ -79,6 +84,27 @@ REQUIRED_SNIPPETS = {
         "CISD not confirmed",
         "DISPLACEMENT FAIL",
         "INVERSION FAIL",
+        "InvalidateExpiredIFVG",
+        "ExpireActiveSetupIfNeeded",
+        "ResumeWaitingForRetest",
+        "WAITING_FOR_RETEST",
+        "EXPIRED — SetupID=",
+        "INVALIDATE — reason=IFVG_VALIDITY_EXPIRED",
+        "CLEAR ACTIVE SETUP",
+        "IDLE — waiting for new setup",
+    ],
+    INCLUDE / "IFVGManager.mqh": [
+        "ValidityElapsed",
+        "MarkExpired",
+        "IsWaitingForRetestReason",
+        "ifvg_validity_seconds",
+        "IFVG validity period elapsed",
+        "price has not returned into IFVG zone",
+    ],
+    INCLUDE / "EntryEngine.mqh": [
+        "ValidityElapsed",
+        "IsWaitingForRetestReason",
+        "Entry validation",
     ],
     INCLUDE / "SMTDetector.mqh": [
         "SKIPPED_GOLD_ONLY",
@@ -89,6 +115,9 @@ REQUIRED_SNIPPETS = {
         "#define IFVG_HARD_MAX_POSITIONS      2",
         "#define IFVG_HARD_MIN_CONSEC_SL      2",
         "#define IFVG_HARD_MIN_COOLDOWN_H     8",
+        "#define IFVG_HTF_TIMEFRAME            PERIOD_H4",
+        "#define IFVG_SETUP_TIMEFRAME          PERIOD_M15",
+        "#define IFVG_EXECUTION_TIMEFRAME     PERIOD_M1",
     ],
 }
 
@@ -235,8 +264,30 @@ def run() -> int:
     if "GlobalVariableSet" not in (INCLUDE / "Persistence.mqh").read_text(encoding="utf-8"):
         errors.append("cooldown persistence missing Global Variables")
 
-    if "RiskMoneyFromDistance" not in (INCLUDE / "Safety.mqh").read_text(encoding="utf-8"):
-        errors.append("RiskMoneyFromDistance missing")
+    if "LotFromAllowedRisk" not in (INCLUDE / "Safety.mqh").read_text(encoding="utf-8"):
+        errors.append("LotFromAllowedRisk missing")
+    if "in.htf = IFVG_HTF_TIMEFRAME" not in (INCLUDE / "Config.mqh").read_text(encoding="utf-8"):
+        errors.append("strategy HTF must be locked to H4")
+    if "in.confirmation_tf = IFVG_SETUP_TIMEFRAME" not in (INCLUDE / "Config.mqh").read_text(encoding="utf-8"):
+        errors.append("setup TF must be locked to M15")
+    if "in.entry_tf = IFVG_EXECUTION_TIMEFRAME" not in (INCLUDE / "Config.mqh").read_text(encoding="utf-8"):
+        errors.append("execution TF must be locked to M1")
+    if 'if(tf == PERIOD_CURRENT)' not in (INCLUDE / "Utils.mqh").read_text(encoding="utf-8"):
+        errors.append("CopyRates/PeriodSeconds must not use chart PERIOD_CURRENT")
+    if "IFVG_CopyTimeSafe" not in (INCLUDE / "Utils.mqh").read_text(encoding="utf-8"):
+        errors.append("CopyTime must reject PERIOD_CURRENT")
+    if "IFVG_CopyTimeSafe" not in (INCLUDE / "StateMachine.mqh").read_text(encoding="utf-8"):
+        errors.append("StateMachine new-bar CopyTime must not use chart timeframe")
+    if "InpUseRiskPercent" not in ea_text or "InpRiskMoney" not in ea_text:
+        errors.append("fixed monetary risk inputs missing")
+    if "MarginIsSufficient" not in (INCLUDE / "TradeManager.mqh").read_text(encoding="utf-8"):
+        errors.append("TradeManager must reject insufficient margin before OrderSend")
+    for src in sources:
+        text = src.read_text(encoding="utf-8")
+        if src.name == "Utils.mqh":
+            continue
+        if re.search(r"\b_Period\b", text) or re.search(r"\bPeriod\s*\(", text):
+            errors.append(f"{src.name}: must not read chart/tester Period()")
 
     if "volume * spec.tick_value" in ea_text and "RiskMoneyFromDistance" not in ea_text:
         errors.append("old risk_money = volume * tick_value reporting formula still used")
@@ -246,6 +297,38 @@ def run() -> int:
         errors.append("StateMachine::Process must take open_positions to unstick after close")
     if "StageWindowExpired" not in sm_text:
         errors.append("CISD/Displacement/FVG definitive-fail window missing")
+    if "ExpireActiveSetupIfNeeded" not in sm_text:
+        errors.append("expired IFVG must be checked before Entry validation")
+    if "InvalidateExpiredIFVG" not in sm_text:
+        errors.append("expired IFVG must invalidate and return IDLE")
+    ee_text = (INCLUDE / "EntryEngine.mqh").read_text(encoding="utf-8")
+    ev_idx = ee_text.find('Decision("Entry validation"')
+    elapsed_idx = ee_text.find("ValidityElapsed")
+    wait_idx = ee_text.find("IsWaitingForRetestReason")
+    if ev_idx < 0 or elapsed_idx < 0 or elapsed_idx > ev_idx:
+        errors.append("TryEnter must reject expired IFVG before logging Entry validation")
+    if wait_idx < 0 or wait_idx > ev_idx:
+        errors.append("TryEnter must treat zone-wait as wait before logging Entry validation")
+    ev_state = sm_text.find("if(m_setup.state == ST_ENTRY_VALIDATION)")
+    if ev_state < 0:
+        errors.append("ST_ENTRY_VALIDATION block missing")
+    else:
+        ev_body = sm_text[ev_state:ev_state + 1800]
+        if "ExpireActiveSetupIfNeeded" not in ev_body:
+            errors.append("ST_ENTRY_VALIDATION must expire the setup before TryEnter")
+        if 'StringFind(m_setup.last_reject, "validity period elapsed")' not in ev_body:
+            errors.append("ST_ENTRY_VALIDATION must invalidate on IFVG validity period elapsed")
+        if "InvalidateExpiredIFVG" not in ev_body:
+            errors.append("ST_ENTRY_VALIDATION elapsed reject must call InvalidateExpiredIFVG")
+        if "ResumeWaitingForRetest" not in ev_body:
+            errors.append("ST_ENTRY_VALIDATION zone-wait must ResumeWaitingForRetest, not spam TryEnter")
+        try_idx = ev_body.find("TryEnter")
+        exp_idx = ev_body.find("ExpireActiveSetupIfNeeded")
+        if try_idx < 0 or exp_idx < 0 or exp_idx > try_idx:
+            errors.append("ExpireActiveSetupIfNeeded must run before TryEnter in ENTRY_VALIDATION")
+    ifvg_text = (INCLUDE / "IFVGManager.mqh").read_text(encoding="utf-8")
+    if 'reason = "price has not returned into IFVG zone"' not in ifvg_text:
+        errors.append("retest geometry string must remain unchanged")
     if "g_sm.Process(cd, g_pos.CountOpen())" not in ea_text:
         errors.append("OnTick must pass open position count into Process")
     if "NotifyManagedPositionClosed" not in ea_text:

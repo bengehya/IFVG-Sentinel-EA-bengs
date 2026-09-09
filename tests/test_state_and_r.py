@@ -11,11 +11,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ifvg_safety import (
     ST_CISD_VALIDATED,
     ST_COOLDOWN,
+    ST_ENTRY_VALIDATION,
     ST_FVG_DETECTED,
     ST_IDLE,
     ST_ORDER_SENT,
     ST_POSITION_ACTIVE,
+    ST_WAITING_RETEST,
     after_cooldown,
+    after_entry_reject,
     after_position_closed,
     after_stage_fail,
     cooldown_end_from_start,
@@ -58,6 +61,19 @@ def run() -> int:
 
     check("2 SL cooldown state", after_cooldown(ST_IDLE, True) == ST_COOLDOWN)
     check("cooldown expired → IDLE", after_cooldown(ST_COOLDOWN, False) == ST_IDLE)
+    check(
+        "IFVG validity elapsed from ENTRY_VALIDATION → IDLE",
+        after_entry_reject(ST_ENTRY_VALIDATION, "IFVG validity period elapsed") == ST_IDLE,
+    )
+    check(
+        "IFVG without retest still returns WAITING_RETEST",
+        after_entry_reject(ST_ENTRY_VALIDATION, "IFVG without retest") == ST_WAITING_RETEST,
+    )
+    check(
+        "price outside IFVG waits, does not stay in ENTRY_VALIDATION",
+        after_entry_reject(ST_ENTRY_VALIDATION, "price has not returned into IFVG zone")
+        == ST_WAITING_RETEST,
+    )
     start = 1_704_067_200
     end = cooldown_end_from_start(start, 8)
     check("cooldown duration is exactly 8h", end - start == 8 * 3600)

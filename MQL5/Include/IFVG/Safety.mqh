@@ -213,6 +213,131 @@ public:
          return 0.0;
       return profit / risk_money;
    }
+
+   static double AllowedRiskMoney(const bool use_percent,
+                                    const double risk_money,
+                                    const double risk_percent,
+                                    const double balance)
+   {
+      if(use_percent)
+      {
+         if(balance <= 0.0 || risk_percent <= 0.0)
+            return 0.0;
+         return balance * risk_percent / 100.0;
+      }
+      if(risk_money <= 0.0)
+         return IFVG_DEFAULT_RISK_MONEY;
+      return risk_money;
+   }
+
+   static double TheoreticalLotFromRisk(const SSymbolSpec &spec,
+                                       const double risk_distance,
+                                       const double allowed_risk)
+   {
+      if(spec.tick_size <= 0.0 || spec.tick_value <= 0.0)
+         return 0.0;
+      if(risk_distance <= 0.0 || allowed_risk <= 0.0)
+         return 0.0;
+      const double risk_per_lot = (risk_distance / spec.tick_size) * spec.tick_value;
+      if(risk_per_lot <= 0.0)
+         return 0.0;
+      return allowed_risk / risk_per_lot;
+   }
+
+   static double LotFromAllowedRisk(const SSymbolSpec &spec,
+                                     const double risk_distance,
+                                     const double allowed_risk,
+                                     double &theoretical_lot,
+                                     double &actual_risk,
+                                     string &reject)
+   {
+      reject = "";
+      theoretical_lot = 0.0;
+      actual_risk = 0.0;
+      if(!BrokerAllowsHardCap(spec))
+      {
+         reject = "broker volume_min exceeds hard cap 0.01";
+         return 0.0;
+      }
+
+      theoretical_lot = TheoreticalLotFromRisk(spec, risk_distance, allowed_risk);
+      if(theoretical_lot <= 0.0)
+      {
+         reject = "calculated lot below broker minimum";
+         return 0.0;
+      }
+
+      const double min_lot_risk = RiskMoneyFromDistance(spec, risk_distance, spec.volume_min);
+      double lot = theoretical_lot;
+      lot = MathMin(lot, IFVG_HARD_MAX_LOT);
+
+      if(lot + 1e-12 < spec.volume_min)
+      {
+         if(min_lot_risk > allowed_risk + 1e-8)
+         {
+            reject = "minimum lot exceeds risk limit";
+            actual_risk = min_lot_risk;
+            return 0.0;
+         }
+         lot = spec.volume_min;
+      }
+
+      lot = IFVG_NormalizeVolume(spec, lot);
+      lot = ClampLotHardCap(lot);
+
+      if(lot + 1e-12 < spec.volume_min)
+      {
+         if(min_lot_risk > allowed_risk + 1e-8)
+         {
+            reject = "minimum lot exceeds risk limit";
+            actual_risk = min_lot_risk;
+            return 0.0;
+         }
+         reject = "calculated lot below broker minimum";
+         return 0.0;
+      }
+
+      actual_risk = RiskMoneyFromDistance(spec, risk_distance, lot);
+      if(actual_risk > allowed_risk + 1e-8)
+      {
+         reject = "minimum lot exceeds risk limit";
+         return 0.0;
+      }
+      if(!VolumeRespectsHardCap(lot))
+      {
+         reject = "lot exceeds hard cap 0.01";
+         return 0.0;
+      }
+      return lot;
+   }
+
+   static bool MarginIsSufficient(const string symbol,
+                                   const ENUM_ORDER_TYPE order_type,
+                                   const double lot,
+                                   const double price,
+                                   const double free_margin,
+                                   double &margin_required,
+                                   string &reject)
+   {
+      reject = "";
+      margin_required = 0.0;
+      if(lot <= 0.0 || price <= 0.0)
+      {
+         reject = "insufficient margin";
+         return false;
+      }
+      if(!OrderCalcMargin(order_type, symbol, lot, price, margin_required))
+      {
+         reject = "insufficient margin";
+         return false;
+      }
+      if(margin_required > free_margin + 1e-8)
+      {
+         reject = "insufficient margin";
+         return false;
+      }
+      return true;
+   }
 };
 
 #endif

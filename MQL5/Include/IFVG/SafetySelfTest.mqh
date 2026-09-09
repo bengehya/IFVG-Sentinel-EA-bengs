@@ -402,6 +402,43 @@ public:
          }
       }
 
+      // Monetary risk: min broker lot must not be forced if it exceeds max risk
+      {
+         SSymbolSpec spec;
+         IFVG_ResetSymbolSpec(spec);
+         spec.valid = true;
+         spec.tick_size = 0.01;
+         spec.tick_value = 1.0;
+         spec.volume_min = 0.01;
+         spec.volume_step = 0.01;
+         spec.volume_max = 100.0;
+         double theo = 0.0;
+         double actual = 0.0;
+         string rej = "";
+         const double lot = CIFVGSafety::LotFromAllowedRisk(spec, 15.41, 5.0, theo, actual, rej);
+         if(lot > 0.0 || StringFind(rej, "minimum lot exceeds risk limit") < 0)
+         {
+            log.Error("RISK LOT TEST FAILED: min lot was forced above max risk");
+            failed++;
+         }
+         else
+         {
+            log.Info("RISK LOT PASS — min lot exceeding $5 max risk is NO TRADE");
+            passed++;
+         }
+         const double lot10 = CIFVGSafety::LotFromAllowedRisk(spec, 5.0, 10.0, theo, actual, rej);
+         if(MathAbs(lot10 - 0.01) > 1e-12 || actual > 10.0 + 1e-8)
+         {
+            log.Error("RISK LOT $10 TEST FAILED");
+            failed++;
+         }
+         else
+         {
+            log.Info("RISK LOT PASS — $10 max allows 0.01 when SL risk fits");
+            passed++;
+         }
+      }
+
       log.Info("Safety self-test: passed=" + IntegerToString(passed) + " failed=" + IntegerToString(failed));
       return failed;
    }

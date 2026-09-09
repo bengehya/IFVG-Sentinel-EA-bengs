@@ -186,8 +186,18 @@ int IFVG_PeriodSeconds(const ENUM_TIMEFRAMES tf)
       case PERIOD_D1:  return 86400;
       case PERIOD_W1:  return 604800;
       case PERIOD_MN1: return 2592000;
+      case PERIOD_CURRENT:
+         // Chart/tester period must never leak into bar-age math.
+         return 0;
    }
-   return PeriodSeconds(tf);
+   return 0;
+}
+
+ENUM_TIMEFRAMES IFVG_RejectCurrentTF(const ENUM_TIMEFRAMES tf, const ENUM_TIMEFRAMES fallback)
+{
+   if(tf == PERIOD_CURRENT)
+      return fallback;
+   return tf;
 }
 
 bool IFVG_CopyRatesSafe(const string symbol,
@@ -195,14 +205,29 @@ bool IFVG_CopyRatesSafe(const string symbol,
                         const int count,
                         MqlRates &rates[])
 {
+   if(tf == PERIOD_CURRENT)
+      return false;
    ArraySetAsSeries(rates, true);
    const int got = CopyRates(symbol, tf, 0, count, rates);
    return (got >= count || got > 10);
 }
 
+bool IFVG_CopyTimeSafe(const string symbol,
+                        const ENUM_TIMEFRAMES tf,
+                        const int start_pos,
+                        const int count,
+                        datetime &times[])
+{
+   if(tf == PERIOD_CURRENT)
+      return false;
+   return (CopyTime(symbol, tf, start_pos, count, times) >= count);
+}
+
 int IFVG_BarsSince(const string symbol, const ENUM_TIMEFRAMES tf, const datetime from)
 {
    if(from <= 0)
+      return -1;
+   if(tf == PERIOD_CURRENT)
       return -1;
    MqlRates rates[];
    ArraySetAsSeries(rates, true);
