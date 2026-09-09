@@ -246,3 +246,113 @@ def after_cooldown(state: str, cooldown_active: bool) -> str:
     if state == ST_COOLDOWN:
         return ST_IDLE
     return state
+
+
+# --- expired IFVG setup lifecycle (not strategy filters) ---
+
+ST_IFVG_CREATED = "IFVG_CREATED"
+ST_WAITING_RETEST = "WAITING_RETEST"
+ST_RETEST_DETECTED = "RETEST_DETECTED"
+ST_ENTRY_VALIDATION = "ENTRY_VALIDATION"
+
+IFVG_LIFE_CREATED = "CREATED"
+IFVG_LIFE_WAITING = "WAITING_RETEST"
+IFVG_LIFE_RETEST_LIFE = "RETEST"
+IFVG_LIFE_EXPIRED_LIFE = "EXPIRED"
+IFVG_LIFE_NONE_LIFE = "NONE"
+
+LOG_EXPIRED = "[IFVG] EXPIRED — SetupID="
+LOG_INVALIDATE = "[STATE] INVALIDATE — reason=IFVG_VALIDITY_EXPIRED"
+LOG_CLEAR = "[STATE] CLEAR ACTIVE SETUP"
+LOG_IDLE = "[STATE] IDLE — waiting for new setup"
+LOG_ENTRY_VALIDATION = "[IFVG] Entry validation: SetupID="
+
+
+def ifvg_expire_at(created: int, validity_seconds: int) -> int:
+    return created + validity_seconds
+
+
+def ifvg_validity_elapsed(now: int, created: int, validity_seconds: int, life: str) -> bool:
+    if life == IFVG_LIFE_EXPIRED_LIFE:
+        return True
+    if life in ("TRADED", "INVALIDATED", IFVG_LIFE_NONE_LIFE):
+        return False
+    expire = ifvg_expire_at(created, validity_seconds)
+    return expire > 0 and now >= expire
+
+
+def create_ifvg_setup(setup_id: int, created: int, validity_seconds: int) -> dict:
+    """Mirrors IFVG created → WAITING_RETEST (CIFVGManager::CreateFromInvertedFVG)."""
+    return {
+        "setup_id": setup_id,
+        "state": ST_WAITING_RETEST,
+        "ifvg_id": 1,
+        "ifvg_life": IFVG_LIFE_WAITING,
+        "ifvg_created": created,
+        "validity_seconds": validity_seconds,
+        "expire": ifvg_expire_at(created, validity_seconds),
+        "can_search_new": False,
+        "entry_validation_calls": [],
+        "logs": [],
+    }
+
+
+def _invalidate_expired(setup: dict) -> None:
+    sid = setup["setup_id"]
+    setup["logs"].append(f"{LOG_EXPIRED}{sid}")
+    setup["logs"].append(LOG_INVALIDATE)
+    setup["logs"].append(LOG_CLEAR)
+    setup["ifvg_life"] = IFVG_LIFE_NONE_LIFE
+    setup["ifvg_id"] = 0
+    setup["setup_id"] = 0
+    setup["state"] = ST_IDLE
+    setup["can_search_new"] = True
+    setup["logs"].append(LOG_IDLE)
+
+
+def process_ifvg_tick(setup: dict, now: int, retest_ok: bool = False) -> dict:
+    """Mirrors CStateMachine::Process for WAITING_RETEST / ENTRY_VALIDATION.
+
+    Expired IFVG must invalidate, clear SetupID, return IDLE, and never
+    re-enter Entry validation with the old SetupID.
+    """
+    tick_state = setup["state"] in (ST_WAITING_RETEST, ST_RETEST_DETECTED, ST_ENTRY_VALIDATION)
+    if tick_state and ifvg_validity_elapsed(
+        now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
+    ):
+        _invalidate_expired(setup)
+        return setup
+
+    if setup["state"] == ST_WAITING_RETEST:
+        if retest_ok and not ifvg_validity_elapsed(
+            now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
+        ):
+            setup["ifvg_life"] = IFVG_LIFE_RETEST_LIFE
+            setup["state"] = ST_ENTRY_VALIDATION
+        else:
+            return setup
+
+    if setup["state"] == ST_RETEST_DETECTED:
+        setup["state"] = ST_ENTRY_VALIDATION
+
+    if setup["state"] == ST_ENTRY_VALIDATION:
+        if ifvg_validity_elapsed(
+            now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
+        ):
+            _invalidate_expired(setup)
+            return setup
+        sid = setup["setup_id"]
+        setup["entry_validation_calls"].append(sid)
+        setup["logs"].append(f"{LOG_ENTRY_VALIDATION}{sid}")
+    return setup
+
+
+def after_entry_reject(state: str, reject: str) -> str:
+    """Mirrors ST_ENTRY_VALIDATION reject handling (lifecycle only)."""
+    if "validity period elapsed" in reject or reject == "IFVG_VALIDITY_EXPIRED":
+        return ST_IDLE
+    if "cooldown" in reject or "positions" in reject:
+        return state
+    if "retest" in reject:
+        return ST_WAITING_RETEST
+    return state

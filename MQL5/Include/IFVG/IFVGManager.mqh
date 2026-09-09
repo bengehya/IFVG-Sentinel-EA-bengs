@@ -75,6 +75,7 @@ public:
       ZeroMemory(out); // SIFVG has no string fields
       if(fvg.state != FVG_INVERTED || !fvg.inverted)
          return false;
+      Age(TimeCurrent());
       if(FindBySource(fvg.id) >= 0)
       {
          out = m_zones[FindBySource(fvg.id)];
@@ -117,9 +118,42 @@ public:
       {
          if(m_zones[i].life == IFVG_LIFE_TRADED || m_zones[i].life == IFVG_LIFE_INVALIDATED)
             continue;
-         if(now >= m_zones[i].expire)
+         if(m_zones[i].expire > 0 && now >= m_zones[i].expire)
             m_zones[i].life = IFVG_LIFE_EXPIRED;
       }
+   }
+
+   void MarkExpired(SIFVG &z)
+   {
+      z.life = IFVG_LIFE_EXPIRED;
+      const int idx = FindBySource(z.source_fvg_id);
+      if(idx >= 0)
+         m_zones[idx] = z;
+   }
+
+   bool ValidityElapsed(SIFVG &z, const datetime now)
+   {
+      if(z.id == 0)
+         return false;
+      if(z.life == IFVG_LIFE_TRADED)
+         return false;
+
+      Age(now);
+
+      const int idx = FindBySource(z.source_fvg_id);
+      if(idx >= 0 && m_zones[idx].life == IFVG_LIFE_EXPIRED)
+      {
+         z.life = IFVG_LIFE_EXPIRED;
+         return true;
+      }
+      if(z.life == IFVG_LIFE_EXPIRED)
+         return true;
+      if(z.life != IFVG_LIFE_INVALIDATED && z.expire > 0 && now >= z.expire)
+      {
+         MarkExpired(z);
+         return true;
+      }
+      return false;
    }
 
    bool IsValidIFVGRetest(const SIFVG &z,
@@ -186,8 +220,7 @@ public:
 
    bool UpdateRetest(const string symbol, SIFVG &z)
    {
-      Age(TimeCurrent());
-      if(z.life == IFVG_LIFE_EXPIRED)
+      if(ValidityElapsed(z, TimeCurrent()))
          return false;
 
       MqlRates rates[];

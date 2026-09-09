@@ -21,7 +21,7 @@ private:
    string               m_file_name;
    ENUM_IFVG_LOG_LEVEL  m_level;
 
-   void WriteLine(const ENUM_IFVG_LOG_LEVEL level, const string msg)
+   void WritePrefixed(const string prefix, const ENUM_IFVG_LOG_LEVEL level, const string msg)
    {
       if(!m_enabled)
          return;
@@ -30,7 +30,7 @@ private:
       if(level == LOG_DEBUG && !m_debug)
          return;
 
-      const string line = IFVG_LOG_PREFIX + msg;
+      const string line = prefix + msg;
       Print(line);
 
       if(m_to_file && m_file != INVALID_HANDLE)
@@ -39,6 +39,11 @@ private:
          FileWriteString(m_file, stamped + "\r\n");
          FileFlush(m_file);
       }
+   }
+
+   void WriteLine(const ENUM_IFVG_LOG_LEVEL level, const string msg)
+   {
+      WritePrefixed(IFVG_LOG_PREFIX, level, msg);
    }
 
 public:
@@ -104,6 +109,11 @@ public:
          WriteLine(LOG_INFO, name + " = " + verdict);
       else
          WriteLine(LOG_INFO, name + " = " + verdict + " — " + detail);
+   }
+
+   void State(const string msg)
+   {
+      WritePrefixed("[STATE] ", LOG_INFO, msg);
    }
 };
 

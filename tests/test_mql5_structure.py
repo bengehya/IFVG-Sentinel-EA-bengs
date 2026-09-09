@@ -79,6 +79,22 @@ REQUIRED_SNIPPETS = {
         "CISD not confirmed",
         "DISPLACEMENT FAIL",
         "INVERSION FAIL",
+        "InvalidateExpiredIFVG",
+        "ExpireActiveSetupIfNeeded",
+        "EXPIRED — SetupID=",
+        "INVALIDATE — reason=IFVG_VALIDITY_EXPIRED",
+        "CLEAR ACTIVE SETUP",
+        "IDLE — waiting for new setup",
+    ],
+    INCLUDE / "IFVGManager.mqh": [
+        "ValidityElapsed",
+        "MarkExpired",
+        "ifvg_validity_seconds",
+        "IFVG validity period elapsed",
+    ],
+    INCLUDE / "EntryEngine.mqh": [
+        "ValidityElapsed",
+        "Entry validation",
     ],
     INCLUDE / "SMTDetector.mqh": [
         "SKIPPED_GOLD_ONLY",
@@ -246,6 +262,15 @@ def run() -> int:
         errors.append("StateMachine::Process must take open_positions to unstick after close")
     if "StageWindowExpired" not in sm_text:
         errors.append("CISD/Displacement/FVG definitive-fail window missing")
+    if "ExpireActiveSetupIfNeeded" not in sm_text:
+        errors.append("expired IFVG must be checked before Entry validation")
+    if "InvalidateExpiredIFVG" not in sm_text:
+        errors.append("expired IFVG must invalidate and return IDLE")
+    ee_text = (INCLUDE / "EntryEngine.mqh").read_text(encoding="utf-8")
+    ev_idx = ee_text.find('Decision("Entry validation"')
+    elapsed_idx = ee_text.find("ValidityElapsed")
+    if ev_idx < 0 or elapsed_idx < 0 or elapsed_idx > ev_idx:
+        errors.append("TryEnter must reject expired IFVG before logging Entry validation")
     if "g_sm.Process(cd, g_pos.CountOpen())" not in ea_text:
         errors.append("OnTick must pass open position count into Process")
     if "NotifyManagedPositionClosed" not in ea_text:

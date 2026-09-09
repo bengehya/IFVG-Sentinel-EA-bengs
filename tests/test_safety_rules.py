@@ -126,11 +126,13 @@ def run() -> int:
     from ifvg_safety import (
         ST_CISD_VALIDATED,
         ST_COOLDOWN,
+        ST_ENTRY_VALIDATION,
         ST_FVG_DETECTED,
         ST_IDLE,
         ST_ORDER_SENT,
         ST_POSITION_ACTIVE,
         after_cooldown,
+        after_entry_reject,
         after_position_closed,
         after_stage_fail,
         realized_r,
@@ -144,6 +146,10 @@ def run() -> int:
     check("STATE displacement fail after window → IDLE", after_stage_fail(ST_CISD_VALIDATED, True) == ST_IDLE)
     check("STATE FVG fail after window → IDLE", after_stage_fail(ST_FVG_DETECTED, True) == ST_IDLE)
     check("STATE cooldown expired → IDLE", after_cooldown(ST_COOLDOWN, False) == ST_IDLE)
+    check(
+        "STATE IFVG validity elapsed → IDLE",
+        after_entry_reject(ST_ENTRY_VALIDATION, "IFVG validity period elapsed") == ST_IDLE,
+    )
 
     risk_money = risk_money_from_stops(0.01, 1.0, 4019.53, 4034.94, 0.01)
     r = realized_r(-15.42, risk_money)
