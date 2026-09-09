@@ -115,6 +115,11 @@ public:
    {
       WritePrefixed("[STATE] ", LOG_INFO, msg);
    }
+
+   void Risk(const string msg)
+   {
+      WritePrefixed("[IFVG][RISK] ", LOG_INFO, msg);
+   }
 };
 
 #endif

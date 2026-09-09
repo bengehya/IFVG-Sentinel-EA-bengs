@@ -31,13 +31,13 @@
 #include <IFVG/Dashboard.mqh>
 #include <IFVG/SafetySelfTest.mqh>
 
-//--- STRATEGY
+//--- STRATEGY (internal TFs are locked: HTF=H4, SETUP=M15, EXECUTION=M1)
 input group "=== STRATEGY ==="
 input bool              InpGoldOnlyMode         = true;
 input string            InpSymbol               = "XAUUSD";
-input ENUM_TIMEFRAMES   InpHTF_Timeframe        = PERIOD_H4;
-input ENUM_TIMEFRAMES   InpConfirmation_Timeframe = PERIOD_M15;
-input ENUM_TIMEFRAMES   InpEntry_Timeframe      = PERIOD_M1;
+input ENUM_TIMEFRAMES   InpHTF_Timeframe        = PERIOD_H4;   // locked to H4
+input ENUM_TIMEFRAMES   InpConfirmation_Timeframe = PERIOD_M15; // locked to M15
+input ENUM_TIMEFRAMES   InpEntry_Timeframe      = PERIOD_M1;  // locked to M1
 input bool              InpAllowBuy             = true;
 input bool              InpAllowSell            = true;
 
@@ -56,6 +56,9 @@ input int               InpSMTSwingRight        = 2;
 //--- RISK (hard-capped in code: MaxLot<=0.01, MaxPositions<=2)
 input group "=== RISK ==="
 input double            InpMaxLot               = 0.01;
+input bool              InpUseRiskPercent       = false;
+input double            InpRiskMoney           = 10.0;
+input double            InpRiskPercent          = 5.0;
 input double            InpTargetRR             = 3.0;
 input int               InpMaxPositions         = 2;
 input int               InpSLBufferPoints       = 50;
@@ -166,6 +169,9 @@ void LoadInputs()
    g_cfg.in.smt_swing_left = InpSMTSwingLeft;
    g_cfg.in.smt_swing_right = InpSMTSwingRight;
    g_cfg.in.max_lot = InpMaxLot;
+   g_cfg.in.use_risk_percent = InpUseRiskPercent;
+   g_cfg.in.risk_money = InpRiskMoney;
+   g_cfg.in.risk_percent = InpRiskPercent;
    g_cfg.in.target_rr = InpTargetRR;
    g_cfg.in.max_positions = InpMaxPositions;
    g_cfg.in.consec_sl_limit = InpConsecutiveSLLimit;
@@ -232,6 +238,10 @@ int OnInit()
               " MaxPos=" + IntegerToString(g_cfg.in.max_positions) +
               " TargetRR=1:" + DoubleToString(g_cfg.in.target_rr, 1) +
               " CooldownH=" + IntegerToString(g_cfg.in.cooldown_hours));
+   g_log.Info("STRATEGY TFs locked HTF=H4 SETUP=M15 EXEC=M1 (chart/tester period is ignored)");
+   g_log.Info("RiskMode=" + (g_cfg.in.use_risk_percent ? "PERCENT" : "FIXED_MONEY") +
+              " RiskMoney=" + DoubleToString(g_cfg.in.risk_money, 2) +
+              " RiskPercent=" + DoubleToString(g_cfg.in.risk_percent, 1));
 
    if(InpRunSafetySelfTest)
    {

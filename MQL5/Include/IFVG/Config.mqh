@@ -70,6 +70,10 @@ struct SIFVGInputs
    int               sl_buffer_points;
    int               min_sl_points;
 
+   bool              use_risk_percent;
+   double            risk_money;
+   double            risk_percent;
+
    long              magic;
    bool              enable_dashboard;
    bool              enable_logs;
@@ -91,6 +95,13 @@ public:
       in.max_positions = CIFVGSafety::ClampMaxPositions(in.max_positions);
       in.consec_sl_limit = CIFVGSafety::ClampConsecSL(in.consec_sl_limit);
       in.cooldown_hours = CIFVGSafety::ClampCooldownHours(in.cooldown_hours);
+      in.htf = IFVG_HTF_TIMEFRAME;
+      in.confirmation_tf = IFVG_SETUP_TIMEFRAME;
+      in.entry_tf = IFVG_EXECUTION_TIMEFRAME;
+      if(in.risk_money <= 0.0)
+         in.risk_money = IFVG_DEFAULT_RISK_MONEY;
+      if(in.risk_percent <= 0.0)
+         in.risk_percent = 5.0;
       if(in.target_rr < 3.0)
          in.target_rr = 3.0;
       if(in.magic <= 0)
@@ -120,6 +131,16 @@ public:
       if(in.gold_only_mode)
          return false;
       return (EffectiveSMTMode() == SMT_REQUIRED);
+   }
+
+   ENUM_IFVG_RISK_MODE RiskMode() const
+   {
+      return in.use_risk_percent ? RISK_PERCENT : RISK_FIXED_MONEY;
+   }
+
+   double AllowedRiskMoney(const double balance) const
+   {
+      return CIFVGSafety::AllowedRiskMoney(in.use_risk_percent, in.risk_money, in.risk_percent, balance);
    }
 };
 

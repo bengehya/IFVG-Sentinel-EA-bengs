@@ -273,7 +273,7 @@ public:
 
       const string symbol = m_sym.SymbolName();
       datetime t[];
-      if(CopyTime(symbol, m_cfg.in.confirmation_tf, 0, 1, t) <= 0)
+      if(!IFVG_CopyTimeSafe(symbol, m_cfg.in.confirmation_tf, 0, 1, t))
          return;
 
       const bool new_bar = (t[0] != m_last_bar);

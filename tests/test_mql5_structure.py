@@ -59,6 +59,8 @@ REQUIRED_SNIPPETS = {
         "InpConsecutiveSLLimit",
         "InpCooldownHours",
         "InpGoldOnlyMode",
+        "InpUseRiskPercent",
+        "InpRiskMoney",
         "OnTradeTransaction",
         "OnTester",
     ],
@@ -71,6 +73,9 @@ REQUIRED_SNIPPETS = {
         "AllowsOrderOnSymbol",
         "RiskMoneyFromDistance",
         "RewardMeetsTarget",
+        "LotFromAllowedRisk",
+        "AllowedRiskMoney",
+        "MarginIsSufficient",
     ],
     INCLUDE / "StateMachine.mqh": [
         "NotifyManagedPositionClosed",
@@ -110,6 +115,9 @@ REQUIRED_SNIPPETS = {
         "#define IFVG_HARD_MAX_POSITIONS      2",
         "#define IFVG_HARD_MIN_CONSEC_SL      2",
         "#define IFVG_HARD_MIN_COOLDOWN_H     8",
+        "#define IFVG_HTF_TIMEFRAME            PERIOD_H4",
+        "#define IFVG_SETUP_TIMEFRAME          PERIOD_M15",
+        "#define IFVG_EXECUTION_TIMEFRAME     PERIOD_M1",
     ],
 }
 
@@ -256,8 +264,30 @@ def run() -> int:
     if "GlobalVariableSet" not in (INCLUDE / "Persistence.mqh").read_text(encoding="utf-8"):
         errors.append("cooldown persistence missing Global Variables")
 
-    if "RiskMoneyFromDistance" not in (INCLUDE / "Safety.mqh").read_text(encoding="utf-8"):
-        errors.append("RiskMoneyFromDistance missing")
+    if "LotFromAllowedRisk" not in (INCLUDE / "Safety.mqh").read_text(encoding="utf-8"):
+        errors.append("LotFromAllowedRisk missing")
+    if "in.htf = IFVG_HTF_TIMEFRAME" not in (INCLUDE / "Config.mqh").read_text(encoding="utf-8"):
+        errors.append("strategy HTF must be locked to H4")
+    if "in.confirmation_tf = IFVG_SETUP_TIMEFRAME" not in (INCLUDE / "Config.mqh").read_text(encoding="utf-8"):
+        errors.append("setup TF must be locked to M15")
+    if "in.entry_tf = IFVG_EXECUTION_TIMEFRAME" not in (INCLUDE / "Config.mqh").read_text(encoding="utf-8"):
+        errors.append("execution TF must be locked to M1")
+    if 'if(tf == PERIOD_CURRENT)' not in (INCLUDE / "Utils.mqh").read_text(encoding="utf-8"):
+        errors.append("CopyRates/PeriodSeconds must not use chart PERIOD_CURRENT")
+    if "IFVG_CopyTimeSafe" not in (INCLUDE / "Utils.mqh").read_text(encoding="utf-8"):
+        errors.append("CopyTime must reject PERIOD_CURRENT")
+    if "IFVG_CopyTimeSafe" not in (INCLUDE / "StateMachine.mqh").read_text(encoding="utf-8"):
+        errors.append("StateMachine new-bar CopyTime must not use chart timeframe")
+    if "InpUseRiskPercent" not in ea_text or "InpRiskMoney" not in ea_text:
+        errors.append("fixed monetary risk inputs missing")
+    if "MarginIsSufficient" not in (INCLUDE / "TradeManager.mqh").read_text(encoding="utf-8"):
+        errors.append("TradeManager must reject insufficient margin before OrderSend")
+    for src in sources:
+        text = src.read_text(encoding="utf-8")
+        if src.name == "Utils.mqh":
+            continue
+        if re.search(r"\b_Period\b", text) or re.search(r"\bPeriod\s*\(", text):
+            errors.append(f"{src.name}: must not read chart/tester Period()")
 
     if "volume * spec.tick_value" in ea_text and "RiskMoneyFromDistance" not in ea_text:
         errors.append("old risk_money = volume * tick_value reporting formula still used")

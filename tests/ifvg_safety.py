@@ -216,6 +216,87 @@ def realized_r(profit: float, risk_money: float) -> float:
     return profit / risk_money
 
 
+# --- locked strategy timeframes (chart/tester period is ignored) ---
+
+HTF_TIMEFRAME = "PERIOD_H4"
+SETUP_TIMEFRAME = "PERIOD_M15"
+EXECUTION_TIMEFRAME = "PERIOD_M1"
+DEFAULT_RISK_MONEY = 10.0
+
+
+def lock_strategy_timeframes(_chart_tf: str) -> dict:
+    """Internal strategy TFs never follow the tester/chart period."""
+    return {
+        "htf": HTF_TIMEFRAME,
+        "setup": SETUP_TIMEFRAME,
+        "execution": EXECUTION_TIMEFRAME,
+    }
+
+
+def allowed_risk_money(use_percent: bool, risk_money: float, risk_percent: float, balance: float) -> float:
+    if use_percent:
+        if balance <= 0.0 or risk_percent <= 0.0:
+            return 0.0
+        return balance * risk_percent / 100.0
+    if risk_money <= 0.0:
+        return DEFAULT_RISK_MONEY
+    return risk_money
+
+
+def theoretical_lot_from_risk(tick_size: float, tick_value: float, risk_distance: float, allowed_risk: float) -> float:
+    if tick_size <= 0.0 or tick_value <= 0.0 or risk_distance <= 0.0 or allowed_risk <= 0.0:
+        return 0.0
+    risk_per_lot = (risk_distance / tick_size) * tick_value
+    if risk_per_lot <= 0.0:
+        return 0.0
+    return allowed_risk / risk_per_lot
+
+
+def normalize_volume(volume: float, volume_step: float) -> float:
+    if volume_step > 0.0:
+        volume = int(volume / volume_step + 1e-12) * volume_step
+    return volume
+
+
+def lot_from_allowed_risk(
+    tick_size: float,
+    tick_value: float,
+    risk_distance: float,
+    allowed_risk: float,
+    volume_min: float = 0.01,
+    volume_step: float = 0.01,
+    volume_max: float = 100.0,
+) -> tuple[float, float, float, str]:
+    """Returns theoretical_lot, final_lot, actual_risk, reject_reason."""
+    theo = theoretical_lot_from_risk(tick_size, tick_value, risk_distance, allowed_risk)
+    if theo <= 0.0:
+        return 0.0, 0.0, 0.0, "calculated lot below broker minimum"
+    min_lot_risk = risk_money_from_distance(tick_size, tick_value, risk_distance, volume_min)
+    lot = min(theo, HARD_MAX_LOT)
+    if lot + 1e-12 < volume_min:
+        if min_lot_risk > allowed_risk + 1e-8:
+            return theo, 0.0, min_lot_risk, "minimum lot exceeds risk limit"
+        lot = volume_min
+    lot = normalize_volume(lot, volume_step)
+    lot = clamp_lot_hard_cap(lot)
+    if lot + 1e-12 < volume_min:
+        if min_lot_risk > allowed_risk + 1e-8:
+            return theo, 0.0, min_lot_risk, "minimum lot exceeds risk limit"
+        return theo, 0.0, 0.0, "calculated lot below broker minimum"
+    actual = risk_money_from_distance(tick_size, tick_value, risk_distance, lot)
+    if actual > allowed_risk + 1e-8:
+        return theo, 0.0, actual, "minimum lot exceeds risk limit"
+    if lot > HARD_MAX_LOT + 1e-12:
+        return theo, 0.0, actual, "lot exceeds hard cap 0.01"
+    return theo, lot, actual, ""
+
+
+def margin_is_sufficient(margin_required: float, free_margin: float) -> tuple[bool, str]:
+    if margin_required > free_margin + 1e-8:
+        return False, "insufficient margin"
+    return True, ""
+
+
 # --- state-machine lifecycle (not strategy filters) ---
 
 ST_IDLE = "IDLE"
