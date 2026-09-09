@@ -147,6 +147,23 @@ private:
       return true;
    }
 
+   void LogWaitingForRetestOnce()
+   {
+      const string fp = "WAITING_FOR_RETEST|" + IntegerToString((long)m_setup.setup_id);
+      if(fp == m_last_diag_fp)
+         return;
+      m_last_diag_fp = fp;
+      if(m_log != NULL)
+         m_log.Decision("WAITING_FOR_RETEST", "SetupID=" + IntegerToString((long)m_setup.setup_id));
+   }
+
+   void ResumeWaitingForRetest()
+   {
+      m_setup.state = ST_WAITING_RETEST;
+      m_status = EA_SETUP_FOUND;
+      LogWaitingForRetestOnce();
+   }
+
    void RememberPlanRisk()
    {
       if(m_last_plan.risk_distance > 0.0)
@@ -452,6 +469,7 @@ public:
          m_status = EA_SETUP_FOUND;
          if(ExpireActiveSetupIfNeeded())
             return;
+         LogWaitingForRetestOnce();
          DumpChain("FAIL", "-", "NO TRADE", "IFVG exists — waiting for valid retest");
       }
 
@@ -471,7 +489,7 @@ public:
                Invalidate("IFVG invalidated before retest");
                return;
             }
-            Diag("RETEST", "FAIL", "IFVG exists but retest not found");
+            LogWaitingForRetestOnce();
             return;
          }
          m_setup.state = ST_RETEST_DETECTED;
@@ -479,6 +497,7 @@ public:
 
       if(m_setup.state == ST_RETEST_DETECTED)
       {
+         m_last_diag_fp = "RETEST_DETECTED|" + IntegerToString((long)m_setup.setup_id);
          m_setup.state = ST_ENTRY_VALIDATION;
       }
 
@@ -503,6 +522,11 @@ public:
                StringFind(m_setup.last_reject, "validity period elapsed") >= 0)
             {
                InvalidateExpiredIFVG();
+               return;
+            }
+            if(CIFVGManager::IsWaitingForRetestReason(m_setup.last_reject))
+            {
+               ResumeWaitingForRetest();
                return;
             }
             if(m_stats != NULL)

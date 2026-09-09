@@ -131,6 +131,7 @@ def run() -> int:
         ST_IDLE,
         ST_ORDER_SENT,
         ST_POSITION_ACTIVE,
+        ST_WAITING_RETEST,
         after_cooldown,
         after_entry_reject,
         after_position_closed,
@@ -149,6 +150,11 @@ def run() -> int:
     check(
         "STATE IFVG validity elapsed → IDLE",
         after_entry_reject(ST_ENTRY_VALIDATION, "IFVG validity period elapsed") == ST_IDLE,
+    )
+    check(
+        "STATE price outside IFVG → WAITING_RETEST",
+        after_entry_reject(ST_ENTRY_VALIDATION, "price has not returned into IFVG zone")
+        == ST_WAITING_RETEST,
     )
 
     risk_money = risk_money_from_stops(0.01, 1.0, 4019.53, 4034.94, 0.01)

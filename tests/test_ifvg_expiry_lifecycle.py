@@ -110,6 +110,11 @@ def run() -> int:
         "entry reject without retest returns WAITING_RETEST",
         after_entry_reject(ST_ENTRY_VALIDATION, "IFVG without retest") == ST_WAITING_RETEST,
     )
+    check(
+        "price outside IFVG is WAITING_RETEST not ENTRY_VALIDATION",
+        after_entry_reject(ST_ENTRY_VALIDATION, "price has not returned into IFVG zone")
+        == ST_WAITING_RETEST,
+    )
 
     # --- REGRESSION: Strategy Tester expired-IFVG loop (2025.09.15 12:52) ---
     created_t = 1_757_937_120  # 2025.09.15 12:52-ish epoch

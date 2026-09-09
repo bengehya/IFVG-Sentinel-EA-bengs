@@ -81,6 +81,8 @@ REQUIRED_SNIPPETS = {
         "INVERSION FAIL",
         "InvalidateExpiredIFVG",
         "ExpireActiveSetupIfNeeded",
+        "ResumeWaitingForRetest",
+        "WAITING_FOR_RETEST",
         "EXPIRED — SetupID=",
         "INVALIDATE — reason=IFVG_VALIDITY_EXPIRED",
         "CLEAR ACTIVE SETUP",
@@ -89,11 +91,14 @@ REQUIRED_SNIPPETS = {
     INCLUDE / "IFVGManager.mqh": [
         "ValidityElapsed",
         "MarkExpired",
+        "IsWaitingForRetestReason",
         "ifvg_validity_seconds",
         "IFVG validity period elapsed",
+        "price has not returned into IFVG zone",
     ],
     INCLUDE / "EntryEngine.mqh": [
         "ValidityElapsed",
+        "IsWaitingForRetestReason",
         "Entry validation",
     ],
     INCLUDE / "SMTDetector.mqh": [
@@ -269,23 +274,31 @@ def run() -> int:
     ee_text = (INCLUDE / "EntryEngine.mqh").read_text(encoding="utf-8")
     ev_idx = ee_text.find('Decision("Entry validation"')
     elapsed_idx = ee_text.find("ValidityElapsed")
+    wait_idx = ee_text.find("IsWaitingForRetestReason")
     if ev_idx < 0 or elapsed_idx < 0 or elapsed_idx > ev_idx:
         errors.append("TryEnter must reject expired IFVG before logging Entry validation")
+    if wait_idx < 0 or wait_idx > ev_idx:
+        errors.append("TryEnter must treat zone-wait as wait before logging Entry validation")
     ev_state = sm_text.find("if(m_setup.state == ST_ENTRY_VALIDATION)")
     if ev_state < 0:
         errors.append("ST_ENTRY_VALIDATION block missing")
     else:
-        ev_body = sm_text[ev_state:ev_state + 1600]
+        ev_body = sm_text[ev_state:ev_state + 1800]
         if "ExpireActiveSetupIfNeeded" not in ev_body:
             errors.append("ST_ENTRY_VALIDATION must expire the setup before TryEnter")
         if 'StringFind(m_setup.last_reject, "validity period elapsed")' not in ev_body:
             errors.append("ST_ENTRY_VALIDATION must invalidate on IFVG validity period elapsed")
         if "InvalidateExpiredIFVG" not in ev_body:
             errors.append("ST_ENTRY_VALIDATION elapsed reject must call InvalidateExpiredIFVG")
+        if "ResumeWaitingForRetest" not in ev_body:
+            errors.append("ST_ENTRY_VALIDATION zone-wait must ResumeWaitingForRetest, not spam TryEnter")
         try_idx = ev_body.find("TryEnter")
         exp_idx = ev_body.find("ExpireActiveSetupIfNeeded")
         if try_idx < 0 or exp_idx < 0 or exp_idx > try_idx:
             errors.append("ExpireActiveSetupIfNeeded must run before TryEnter in ENTRY_VALIDATION")
+    ifvg_text = (INCLUDE / "IFVGManager.mqh").read_text(encoding="utf-8")
+    if 'reason = "price has not returned into IFVG zone"' not in ifvg_text:
+        errors.append("retest geometry string must remain unchanged")
     if "g_sm.Process(cd, g_pos.CountOpen())" not in ea_text:
         errors.append("OnTick must pass open position count into Process")
     if "NotifyManagedPositionClosed" not in ea_text:

@@ -267,10 +267,16 @@ LOG_CLEAR = "[STATE] CLEAR ACTIVE SETUP"
 LOG_IDLE = "[STATE] IDLE — waiting for new setup"
 LOG_ENTRY_VALIDATION = "[IFVG] Entry validation: SetupID="
 LOG_NO_TRADE_ELAPSED = "[IFVG] NO TRADE — IFVG validity period elapsed"
+LOG_WAITING_FOR_RETEST = "[IFVG] WAITING_FOR_RETEST: SetupID="
+LOG_NO_TRADE_ZONE = "[IFVG] NO TRADE — price has not returned into IFVG zone"
 
 # Tester evidence: same SetupID re-validated for several minutes after expiry.
 TESTER_EXPIRED_SETUP_ID = -5672277183617112785
 TESTER_LOOP_TICKS = 180  # ~3 minutes of 1s ticks after validity elapsed
+
+# Tester evidence: ST_ENTRY_VALIDATION wait-loop while price is outside the IFVG.
+TESTER_WAIT_SETUP_ID = 8715446097785671798
+TESTER_WAIT_TICKS = 60
 
 
 def ifvg_expire_at(created: int, validity_seconds: int) -> int:
@@ -299,6 +305,7 @@ def create_ifvg_setup(setup_id: int, created: int, validity_seconds: int) -> dic
         "can_search_new": False,
         "entry_validation_calls": [],
         "logs": [],
+        "last_wait_fp": "",
     }
 
 
@@ -315,11 +322,21 @@ def _invalidate_expired(setup: dict) -> None:
     setup["logs"].append(LOG_IDLE)
 
 
+def _log_waiting_once(setup: dict) -> None:
+    fp = f"WAITING_FOR_RETEST|{setup['setup_id']}"
+    if setup.get("last_wait_fp") == fp:
+        return
+    setup["last_wait_fp"] = fp
+    setup["logs"].append(f"{LOG_WAITING_FOR_RETEST}{setup['setup_id']}")
+
+
 def process_ifvg_tick(setup: dict, now: int, retest_ok: bool = False) -> dict:
     """Mirrors CStateMachine::Process for WAITING_RETEST / ENTRY_VALIDATION.
 
     Expired IFVG must invalidate, clear SetupID, return IDLE, and never
     re-enter Entry validation with the old SetupID.
+
+    Price outside the IFVG is WAITING_FOR_RETEST, not an entry failure.
     """
     tick_state = setup["state"] in (ST_WAITING_RETEST, ST_RETEST_DETECTED, ST_ENTRY_VALIDATION)
     if tick_state and ifvg_validity_elapsed(
@@ -329,12 +346,11 @@ def process_ifvg_tick(setup: dict, now: int, retest_ok: bool = False) -> dict:
         return setup
 
     if setup["state"] == ST_WAITING_RETEST:
-        if retest_ok and not ifvg_validity_elapsed(
-            now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
-        ):
+        if retest_ok:
             setup["ifvg_life"] = IFVG_LIFE_RETEST_LIFE
             setup["state"] = ST_ENTRY_VALIDATION
         else:
+            _log_waiting_once(setup)
             return setup
 
     if setup["state"] == ST_RETEST_DETECTED:
@@ -345,6 +361,10 @@ def process_ifvg_tick(setup: dict, now: int, retest_ok: bool = False) -> dict:
             now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
         ):
             _invalidate_expired(setup)
+            return setup
+        if not retest_ok:
+            setup["state"] = ST_WAITING_RETEST
+            _log_waiting_once(setup)
             return setup
         sid = setup["setup_id"]
         setup["entry_validation_calls"].append(sid)
@@ -366,10 +386,21 @@ def after_entry_reject_buggy(state: str, reject: str) -> str:
     return state
 
 
+def is_waiting_for_retest_reason(reason: str) -> bool:
+    """Mirrors CIFVGManager::IsWaitingForRetestReason."""
+    if "price has not returned into IFVG zone" in reason:
+        return True
+    if reason == "IFVG without retest":
+        return True
+    return False
+
+
 def after_entry_reject(state: str, reject: str) -> str:
     """Mirrors ST_ENTRY_VALIDATION reject handling (lifecycle only)."""
     if "validity period elapsed" in reject or reject == "IFVG_VALIDITY_EXPIRED":
         return ST_IDLE
+    if is_waiting_for_retest_reason(reject):
+        return ST_WAITING_RETEST
     if "cooldown" in reject or "positions" in reject:
         return state
     if "retest" in reject:
@@ -407,4 +438,27 @@ def replay_expired_ifvg_ticks(setup: dict, start_now: int, ticks: int, *, fixed:
             process_ifvg_tick(setup, start_now + i)
         else:
             process_expired_loop_tick_buggy(setup, start_now + i)
+    return setup
+
+
+def process_zone_wait_tick_buggy(setup: dict) -> dict:
+    """Pre-fix: zone-wait logged as Entry validation failure every tick."""
+    if setup["state"] != ST_ENTRY_VALIDATION:
+        return setup
+    sid = setup["setup_id"]
+    setup["entry_validation_calls"].append(sid)
+    setup["logs"].append(f"{LOG_ENTRY_VALIDATION}{sid}")
+    setup["logs"].append(LOG_NO_TRADE_ZONE)
+    setup["last_reject"] = "price has not returned into IFVG zone"
+    setup["state"] = after_entry_reject_buggy(setup["state"], setup["last_reject"])
+    return setup
+
+
+def replay_zone_wait_ticks(setup: dict, start_now: int, ticks: int, *, fixed: bool) -> dict:
+    """Replay ticks while price stays outside the IFVG."""
+    for i in range(ticks):
+        if fixed:
+            process_ifvg_tick(setup, start_now + i, retest_ok=False)
+        else:
+            process_zone_wait_tick_buggy(setup)
     return setup

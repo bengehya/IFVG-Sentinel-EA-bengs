@@ -156,6 +156,15 @@ public:
       return false;
    }
 
+   static bool IsWaitingForRetestReason(const string reason)
+   {
+      if(StringFind(reason, "price has not returned into IFVG zone") >= 0)
+         return true;
+      if(reason == "IFVG without retest")
+         return true;
+      return false;
+   }
+
    bool IsValidIFVGRetest(const SIFVG &z,
                           const MqlRates &bar,
                           const datetime now,

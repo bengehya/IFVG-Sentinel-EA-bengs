@@ -69,6 +69,11 @@ def run() -> int:
         "IFVG without retest still returns WAITING_RETEST",
         after_entry_reject(ST_ENTRY_VALIDATION, "IFVG without retest") == ST_WAITING_RETEST,
     )
+    check(
+        "price outside IFVG waits, does not stay in ENTRY_VALIDATION",
+        after_entry_reject(ST_ENTRY_VALIDATION, "price has not returned into IFVG zone")
+        == ST_WAITING_RETEST,
+    )
     start = 1_704_067_200
     end = cooldown_end_from_start(start, 8)
     check("cooldown duration is exactly 8h", end - start == 8 * 3600)
