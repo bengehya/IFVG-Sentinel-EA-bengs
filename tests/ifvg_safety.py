@@ -266,6 +266,11 @@ LOG_INVALIDATE = "[STATE] INVALIDATE — reason=IFVG_VALIDITY_EXPIRED"
 LOG_CLEAR = "[STATE] CLEAR ACTIVE SETUP"
 LOG_IDLE = "[STATE] IDLE — waiting for new setup"
 LOG_ENTRY_VALIDATION = "[IFVG] Entry validation: SetupID="
+LOG_NO_TRADE_ELAPSED = "[IFVG] NO TRADE — IFVG validity period elapsed"
+
+# Tester evidence: same SetupID re-validated for several minutes after expiry.
+TESTER_EXPIRED_SETUP_ID = -5672277183617112785
+TESTER_LOOP_TICKS = 180  # ~3 minutes of 1s ticks after validity elapsed
 
 
 def ifvg_expire_at(created: int, validity_seconds: int) -> int:
@@ -347,6 +352,20 @@ def process_ifvg_tick(setup: dict, now: int, retest_ok: bool = False) -> dict:
     return setup
 
 
+def after_entry_reject_buggy(state: str, reject: str) -> str:
+    """Pre-fix ST_ENTRY_VALIDATION else-branch.
+
+    Only cooldown/positions returned early and only 'retest' moved state.
+    'IFVG validity period elapsed' matched neither, so the machine stayed
+    in ENTRY_VALIDATION and TryEnter ran again on the next tick.
+    """
+    if "cooldown" in reject or "positions" in reject:
+        return state
+    if "retest" in reject:
+        return ST_WAITING_RETEST
+    return state
+
+
 def after_entry_reject(state: str, reject: str) -> str:
     """Mirrors ST_ENTRY_VALIDATION reject handling (lifecycle only)."""
     if "validity period elapsed" in reject or reject == "IFVG_VALIDITY_EXPIRED":
@@ -356,3 +375,36 @@ def after_entry_reject(state: str, reject: str) -> str:
     if "retest" in reject:
         return ST_WAITING_RETEST
     return state
+
+
+def try_enter_buggy(setup: dict, now: int) -> bool:
+    """Pre-fix CEntryEngine::TryEnter: always logs Entry validation first."""
+    sid = setup["setup_id"]
+    setup["entry_validation_calls"].append(sid)
+    setup["logs"].append(f"{LOG_ENTRY_VALIDATION}{sid}")
+    if ifvg_validity_elapsed(
+        now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
+    ):
+        setup["logs"].append(LOG_NO_TRADE_ELAPSED)
+        setup["last_reject"] = "IFVG validity period elapsed"
+        return False
+    return True
+
+
+def process_expired_loop_tick_buggy(setup: dict, now: int) -> dict:
+    """Reproduce the Strategy Tester stall: expired IFVG stays in ENTRY_VALIDATION."""
+    if setup["state"] != ST_ENTRY_VALIDATION:
+        return setup
+    try_enter_buggy(setup, now)
+    setup["state"] = after_entry_reject_buggy(setup["state"], setup.get("last_reject", ""))
+    return setup
+
+
+def replay_expired_ifvg_ticks(setup: dict, start_now: int, ticks: int, *, fixed: bool) -> dict:
+    """Replay OnTick after validity elapsed. `fixed=False` is the tester loop."""
+    for i in range(ticks):
+        if fixed:
+            process_ifvg_tick(setup, start_now + i)
+        else:
+            process_expired_loop_tick_buggy(setup, start_now + i)
+    return setup

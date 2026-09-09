@@ -271,6 +271,21 @@ def run() -> int:
     elapsed_idx = ee_text.find("ValidityElapsed")
     if ev_idx < 0 or elapsed_idx < 0 or elapsed_idx > ev_idx:
         errors.append("TryEnter must reject expired IFVG before logging Entry validation")
+    ev_state = sm_text.find("if(m_setup.state == ST_ENTRY_VALIDATION)")
+    if ev_state < 0:
+        errors.append("ST_ENTRY_VALIDATION block missing")
+    else:
+        ev_body = sm_text[ev_state:ev_state + 1600]
+        if "ExpireActiveSetupIfNeeded" not in ev_body:
+            errors.append("ST_ENTRY_VALIDATION must expire the setup before TryEnter")
+        if 'StringFind(m_setup.last_reject, "validity period elapsed")' not in ev_body:
+            errors.append("ST_ENTRY_VALIDATION must invalidate on IFVG validity period elapsed")
+        if "InvalidateExpiredIFVG" not in ev_body:
+            errors.append("ST_ENTRY_VALIDATION elapsed reject must call InvalidateExpiredIFVG")
+        try_idx = ev_body.find("TryEnter")
+        exp_idx = ev_body.find("ExpireActiveSetupIfNeeded")
+        if try_idx < 0 or exp_idx < 0 or exp_idx > try_idx:
+            errors.append("ExpireActiveSetupIfNeeded must run before TryEnter in ENTRY_VALIDATION")
     if "g_sm.Process(cd, g_pos.CountOpen())" not in ea_text:
         errors.append("OnTick must pass open position count into Process")
     if "NotifyManagedPositionClosed" not in ea_text:
