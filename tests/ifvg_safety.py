@@ -216,6 +216,87 @@ def realized_r(profit: float, risk_money: float) -> float:
     return profit / risk_money
 
 
+# --- locked strategy timeframes (chart/tester period is ignored) ---
+
+HTF_TIMEFRAME = "PERIOD_H4"
+SETUP_TIMEFRAME = "PERIOD_M15"
+EXECUTION_TIMEFRAME = "PERIOD_M1"
+DEFAULT_RISK_MONEY = 10.0
+
+
+def lock_strategy_timeframes(_chart_tf: str) -> dict:
+    """Internal strategy TFs never follow the tester/chart period."""
+    return {
+        "htf": HTF_TIMEFRAME,
+        "setup": SETUP_TIMEFRAME,
+        "execution": EXECUTION_TIMEFRAME,
+    }
+
+
+def allowed_risk_money(use_percent: bool, risk_money: float, risk_percent: float, balance: float) -> float:
+    if use_percent:
+        if balance <= 0.0 or risk_percent <= 0.0:
+            return 0.0
+        return balance * risk_percent / 100.0
+    if risk_money <= 0.0:
+        return DEFAULT_RISK_MONEY
+    return risk_money
+
+
+def theoretical_lot_from_risk(tick_size: float, tick_value: float, risk_distance: float, allowed_risk: float) -> float:
+    if tick_size <= 0.0 or tick_value <= 0.0 or risk_distance <= 0.0 or allowed_risk <= 0.0:
+        return 0.0
+    risk_per_lot = (risk_distance / tick_size) * tick_value
+    if risk_per_lot <= 0.0:
+        return 0.0
+    return allowed_risk / risk_per_lot
+
+
+def normalize_volume(volume: float, volume_step: float) -> float:
+    if volume_step > 0.0:
+        volume = int(volume / volume_step + 1e-12) * volume_step
+    return volume
+
+
+def lot_from_allowed_risk(
+    tick_size: float,
+    tick_value: float,
+    risk_distance: float,
+    allowed_risk: float,
+    volume_min: float = 0.01,
+    volume_step: float = 0.01,
+    volume_max: float = 100.0,
+) -> tuple[float, float, float, str]:
+    """Returns theoretical_lot, final_lot, actual_risk, reject_reason."""
+    theo = theoretical_lot_from_risk(tick_size, tick_value, risk_distance, allowed_risk)
+    if theo <= 0.0:
+        return 0.0, 0.0, 0.0, "calculated lot below broker minimum"
+    min_lot_risk = risk_money_from_distance(tick_size, tick_value, risk_distance, volume_min)
+    lot = min(theo, HARD_MAX_LOT)
+    if lot + 1e-12 < volume_min:
+        if min_lot_risk > allowed_risk + 1e-8:
+            return theo, 0.0, min_lot_risk, "minimum lot exceeds risk limit"
+        lot = volume_min
+    lot = normalize_volume(lot, volume_step)
+    lot = clamp_lot_hard_cap(lot)
+    if lot + 1e-12 < volume_min:
+        if min_lot_risk > allowed_risk + 1e-8:
+            return theo, 0.0, min_lot_risk, "minimum lot exceeds risk limit"
+        return theo, 0.0, 0.0, "calculated lot below broker minimum"
+    actual = risk_money_from_distance(tick_size, tick_value, risk_distance, lot)
+    if actual > allowed_risk + 1e-8:
+        return theo, 0.0, actual, "minimum lot exceeds risk limit"
+    if lot > HARD_MAX_LOT + 1e-12:
+        return theo, 0.0, actual, "lot exceeds hard cap 0.01"
+    return theo, lot, actual, ""
+
+
+def margin_is_sufficient(margin_required: float, free_margin: float) -> tuple[bool, str]:
+    if margin_required > free_margin + 1e-8:
+        return False, "insufficient margin"
+    return True, ""
+
+
 # --- state-machine lifecycle (not strategy filters) ---
 
 ST_IDLE = "IDLE"
@@ -246,3 +327,219 @@ def after_cooldown(state: str, cooldown_active: bool) -> str:
     if state == ST_COOLDOWN:
         return ST_IDLE
     return state
+
+
+# --- expired IFVG setup lifecycle (not strategy filters) ---
+
+ST_IFVG_CREATED = "IFVG_CREATED"
+ST_WAITING_RETEST = "WAITING_RETEST"
+ST_RETEST_DETECTED = "RETEST_DETECTED"
+ST_ENTRY_VALIDATION = "ENTRY_VALIDATION"
+
+IFVG_LIFE_CREATED = "CREATED"
+IFVG_LIFE_WAITING = "WAITING_RETEST"
+IFVG_LIFE_RETEST_LIFE = "RETEST"
+IFVG_LIFE_EXPIRED_LIFE = "EXPIRED"
+IFVG_LIFE_NONE_LIFE = "NONE"
+
+LOG_EXPIRED = "[IFVG] EXPIRED — SetupID="
+LOG_INVALIDATE = "[STATE] INVALIDATE — reason=IFVG_VALIDITY_EXPIRED"
+LOG_CLEAR = "[STATE] CLEAR ACTIVE SETUP"
+LOG_IDLE = "[STATE] IDLE — waiting for new setup"
+LOG_ENTRY_VALIDATION = "[IFVG] Entry validation: SetupID="
+LOG_NO_TRADE_ELAPSED = "[IFVG] NO TRADE — IFVG validity period elapsed"
+LOG_WAITING_FOR_RETEST = "[IFVG] WAITING_FOR_RETEST: SetupID="
+LOG_NO_TRADE_ZONE = "[IFVG] NO TRADE — price has not returned into IFVG zone"
+
+# Tester evidence: same SetupID re-validated for several minutes after expiry.
+TESTER_EXPIRED_SETUP_ID = -5672277183617112785
+TESTER_LOOP_TICKS = 180  # ~3 minutes of 1s ticks after validity elapsed
+
+# Tester evidence: ST_ENTRY_VALIDATION wait-loop while price is outside the IFVG.
+TESTER_WAIT_SETUP_ID = 8715446097785671798
+TESTER_WAIT_TICKS = 60
+
+
+def ifvg_expire_at(created: int, validity_seconds: int) -> int:
+    return created + validity_seconds
+
+
+def ifvg_validity_elapsed(now: int, created: int, validity_seconds: int, life: str) -> bool:
+    if life == IFVG_LIFE_EXPIRED_LIFE:
+        return True
+    if life in ("TRADED", "INVALIDATED", IFVG_LIFE_NONE_LIFE):
+        return False
+    expire = ifvg_expire_at(created, validity_seconds)
+    return expire > 0 and now >= expire
+
+
+def create_ifvg_setup(setup_id: int, created: int, validity_seconds: int) -> dict:
+    """Mirrors IFVG created → WAITING_RETEST (CIFVGManager::CreateFromInvertedFVG)."""
+    return {
+        "setup_id": setup_id,
+        "state": ST_WAITING_RETEST,
+        "ifvg_id": 1,
+        "ifvg_life": IFVG_LIFE_WAITING,
+        "ifvg_created": created,
+        "validity_seconds": validity_seconds,
+        "expire": ifvg_expire_at(created, validity_seconds),
+        "can_search_new": False,
+        "entry_validation_calls": [],
+        "logs": [],
+        "last_wait_fp": "",
+    }
+
+
+def _invalidate_expired(setup: dict) -> None:
+    sid = setup["setup_id"]
+    setup["logs"].append(f"{LOG_EXPIRED}{sid}")
+    setup["logs"].append(LOG_INVALIDATE)
+    setup["logs"].append(LOG_CLEAR)
+    setup["ifvg_life"] = IFVG_LIFE_NONE_LIFE
+    setup["ifvg_id"] = 0
+    setup["setup_id"] = 0
+    setup["state"] = ST_IDLE
+    setup["can_search_new"] = True
+    setup["logs"].append(LOG_IDLE)
+
+
+def _log_waiting_once(setup: dict) -> None:
+    fp = f"WAITING_FOR_RETEST|{setup['setup_id']}"
+    if setup.get("last_wait_fp") == fp:
+        return
+    setup["last_wait_fp"] = fp
+    setup["logs"].append(f"{LOG_WAITING_FOR_RETEST}{setup['setup_id']}")
+
+
+def process_ifvg_tick(setup: dict, now: int, retest_ok: bool = False) -> dict:
+    """Mirrors CStateMachine::Process for WAITING_RETEST / ENTRY_VALIDATION.
+
+    Expired IFVG must invalidate, clear SetupID, return IDLE, and never
+    re-enter Entry validation with the old SetupID.
+
+    Price outside the IFVG is WAITING_FOR_RETEST, not an entry failure.
+    """
+    tick_state = setup["state"] in (ST_WAITING_RETEST, ST_RETEST_DETECTED, ST_ENTRY_VALIDATION)
+    if tick_state and ifvg_validity_elapsed(
+        now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
+    ):
+        _invalidate_expired(setup)
+        return setup
+
+    if setup["state"] == ST_WAITING_RETEST:
+        if retest_ok:
+            setup["ifvg_life"] = IFVG_LIFE_RETEST_LIFE
+            setup["state"] = ST_ENTRY_VALIDATION
+        else:
+            _log_waiting_once(setup)
+            return setup
+
+    if setup["state"] == ST_RETEST_DETECTED:
+        setup["state"] = ST_ENTRY_VALIDATION
+
+    if setup["state"] == ST_ENTRY_VALIDATION:
+        if ifvg_validity_elapsed(
+            now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
+        ):
+            _invalidate_expired(setup)
+            return setup
+        if not retest_ok:
+            setup["state"] = ST_WAITING_RETEST
+            _log_waiting_once(setup)
+            return setup
+        sid = setup["setup_id"]
+        setup["entry_validation_calls"].append(sid)
+        setup["logs"].append(f"{LOG_ENTRY_VALIDATION}{sid}")
+    return setup
+
+
+def after_entry_reject_buggy(state: str, reject: str) -> str:
+    """Pre-fix ST_ENTRY_VALIDATION else-branch.
+
+    Only cooldown/positions returned early and only 'retest' moved state.
+    'IFVG validity period elapsed' matched neither, so the machine stayed
+    in ENTRY_VALIDATION and TryEnter ran again on the next tick.
+    """
+    if "cooldown" in reject or "positions" in reject:
+        return state
+    if "retest" in reject:
+        return ST_WAITING_RETEST
+    return state
+
+
+def is_waiting_for_retest_reason(reason: str) -> bool:
+    """Mirrors CIFVGManager::IsWaitingForRetestReason."""
+    if "price has not returned into IFVG zone" in reason:
+        return True
+    if reason == "IFVG without retest":
+        return True
+    return False
+
+
+def after_entry_reject(state: str, reject: str) -> str:
+    """Mirrors ST_ENTRY_VALIDATION reject handling (lifecycle only)."""
+    if "validity period elapsed" in reject or reject == "IFVG_VALIDITY_EXPIRED":
+        return ST_IDLE
+    if is_waiting_for_retest_reason(reject):
+        return ST_WAITING_RETEST
+    if "cooldown" in reject or "positions" in reject:
+        return state
+    if "retest" in reject:
+        return ST_WAITING_RETEST
+    return state
+
+
+def try_enter_buggy(setup: dict, now: int) -> bool:
+    """Pre-fix CEntryEngine::TryEnter: always logs Entry validation first."""
+    sid = setup["setup_id"]
+    setup["entry_validation_calls"].append(sid)
+    setup["logs"].append(f"{LOG_ENTRY_VALIDATION}{sid}")
+    if ifvg_validity_elapsed(
+        now, setup["ifvg_created"], setup["validity_seconds"], setup["ifvg_life"]
+    ):
+        setup["logs"].append(LOG_NO_TRADE_ELAPSED)
+        setup["last_reject"] = "IFVG validity period elapsed"
+        return False
+    return True
+
+
+def process_expired_loop_tick_buggy(setup: dict, now: int) -> dict:
+    """Reproduce the Strategy Tester stall: expired IFVG stays in ENTRY_VALIDATION."""
+    if setup["state"] != ST_ENTRY_VALIDATION:
+        return setup
+    try_enter_buggy(setup, now)
+    setup["state"] = after_entry_reject_buggy(setup["state"], setup.get("last_reject", ""))
+    return setup
+
+
+def replay_expired_ifvg_ticks(setup: dict, start_now: int, ticks: int, *, fixed: bool) -> dict:
+    """Replay OnTick after validity elapsed. `fixed=False` is the tester loop."""
+    for i in range(ticks):
+        if fixed:
+            process_ifvg_tick(setup, start_now + i)
+        else:
+            process_expired_loop_tick_buggy(setup, start_now + i)
+    return setup
+
+
+def process_zone_wait_tick_buggy(setup: dict) -> dict:
+    """Pre-fix: zone-wait logged as Entry validation failure every tick."""
+    if setup["state"] != ST_ENTRY_VALIDATION:
+        return setup
+    sid = setup["setup_id"]
+    setup["entry_validation_calls"].append(sid)
+    setup["logs"].append(f"{LOG_ENTRY_VALIDATION}{sid}")
+    setup["logs"].append(LOG_NO_TRADE_ZONE)
+    setup["last_reject"] = "price has not returned into IFVG zone"
+    setup["state"] = after_entry_reject_buggy(setup["state"], setup["last_reject"])
+    return setup
+
+
+def replay_zone_wait_ticks(setup: dict, start_now: int, ticks: int, *, fixed: bool) -> dict:
+    """Replay ticks while price stays outside the IFVG."""
+    for i in range(ticks):
+        if fixed:
+            process_ifvg_tick(setup, start_now + i, retest_ok=False)
+        else:
+            process_zone_wait_tick_buggy(setup)
+    return setup

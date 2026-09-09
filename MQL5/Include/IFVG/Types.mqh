@@ -113,6 +113,12 @@ enum ENUM_SETUP_STATE
    ST_COOLDOWN          = 15
 };
 
+enum ENUM_IFVG_RISK_MODE
+{
+   RISK_FIXED_MONEY = 0,
+   RISK_PERCENT     = 1
+};
+
 enum ENUM_EA_STATUS
 {
    EA_WAITING      = 0,
@@ -295,6 +301,9 @@ struct SEntryPlan
    double            risk_distance;
    double            rr_actual;
    double            lot;
+   double            theoretical_lot;
+   double            expected_risk_money;
+   double            margin_required;
    string            reject_reason;
 };
 
@@ -375,6 +384,9 @@ void IFVG_ResetPlan(SEntryPlan &p)
    p.risk_distance = 0.0;
    p.rr_actual = 0.0;
    p.lot = 0.0;
+   p.theoretical_lot = 0.0;
+   p.expected_risk_money = 0.0;
+   p.margin_required = 0.0;
    p.reject_reason = "";
 }
 

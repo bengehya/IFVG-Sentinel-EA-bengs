@@ -59,6 +59,16 @@ private:
          reason = "invalid volume";
          return false;
       }
+      double margin_req = 0.0;
+      string margin_reject = "";
+      const ENUM_ORDER_TYPE otype = (plan.direction == IFVG_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      const double free_margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      if(!CIFVGSafety::MarginIsSufficient(spec.symbol, otype, plan.lot, plan.entry,
+                                         free_margin, margin_req, margin_reject))
+      {
+         reason = (margin_reject == "" ? "insufficient margin" : margin_reject);
+         return false;
+      }
       if(plan.entry <= 0.0 || plan.sl <= 0.0 || plan.tp <= 0.0)
       {
          reason = "invalid price";

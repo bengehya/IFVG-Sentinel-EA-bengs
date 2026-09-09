@@ -48,11 +48,43 @@ public:
    bool TryEnter(SSetup &setup, SEntryPlan &plan)
    {
       IFVG_ResetPlan(plan);
+      const datetime now = TimeCurrent();
+      if(m_ifvg != NULL && m_ifvg.ValidityElapsed(setup.ifvg, now))
+      {
+         setup.last_reject = "IFVG validity period elapsed";
+         return false;
+      }
+
+      string retest_reason = "";
+      MqlRates entry_bars[];
+      if(!IFVG_CopyRatesSafe(m_sym.SymbolName(), m_cfg.in.entry_tf, 3, entry_bars) || ArraySize(entry_bars) < 2)
+      {
+         setup.last_reject = "entry bars unavailable";
+         if(m_log != NULL)
+            m_log.NoTrade("entry bars unavailable");
+         return false;
+      }
+      const bool retest_ok = m_ifvg.IsValidIFVGRetest(setup.ifvg, entry_bars[1], now, retest_reason);
+      if(!retest_ok)
+      {
+         if(StringFind(retest_reason, "validity period elapsed") >= 0)
+         {
+            m_ifvg.MarkExpired(setup.ifvg);
+            setup.last_reject = retest_reason;
+            return false;
+         }
+         setup.last_reject = (retest_reason == "" ? "IFVG without retest" : retest_reason);
+         if(CIFVGManager::IsWaitingForRetestReason(setup.last_reject))
+            return false;
+         if(m_log != NULL)
+            m_log.NoTrade(setup.last_reject);
+         return false;
+      }
+
       if(m_log != NULL)
          m_log.Decision("Entry validation", "SetupID=" + IntegerToString((long)setup.setup_id));
 
       string reason = "";
-      const datetime now = TimeCurrent();
       const bool cooldown_ok = m_cd.AllowsEntry(now, reason);
       if(!cooldown_ok)
       {
@@ -85,23 +117,6 @@ public:
          if(m_log != NULL)
             m_log.NoTrade("SetupID already executed");
          setup.last_reject = "SetupID already executed";
-         return false;
-      }
-
-      string retest_reason = "";
-      MqlRates entry_bars[];
-      if(!IFVG_CopyRatesSafe(m_sym.SymbolName(), m_cfg.in.entry_tf, 3, entry_bars) || ArraySize(entry_bars) < 2)
-      {
-         if(m_log != NULL)
-            m_log.NoTrade("entry bars unavailable");
-         return false;
-      }
-      const bool retest_ok = m_ifvg.IsValidIFVGRetest(setup.ifvg, entry_bars[1], now, retest_reason);
-      if(!retest_ok)
-      {
-         if(m_log != NULL)
-            m_log.NoTrade(retest_reason == "" ? "IFVG without retest" : retest_reason);
-         setup.last_reject = retest_reason;
          return false;
       }
 

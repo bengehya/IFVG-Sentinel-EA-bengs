@@ -16,6 +16,12 @@
 #define IFVG_HARD_MIN_CONSEC_SL      2
 #define IFVG_HARD_MIN_COOLDOWN_H     8
 
+// Strategy timeframes are locked. Chart/tester period is never used for logic.
+#define IFVG_HTF_TIMEFRAME            PERIOD_H4
+#define IFVG_SETUP_TIMEFRAME          PERIOD_M15
+#define IFVG_EXECUTION_TIMEFRAME     PERIOD_M1
+#define IFVG_DEFAULT_RISK_MONEY      10.0
+
 #define IFVG_MAX_SWINGS              64
 #define IFVG_MAX_LIQUIDITY           48
 #define IFVG_MAX_PD_ZONES            32
