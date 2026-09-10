@@ -1,77 +1,63 @@
-# IFVG Sentinel EA
+# MACHINE MAKER
 
-Expert Advisor MetaTrader 5 pour **Deriv**, dédié à **XAUUSD / GOLD**.
+Expert Advisor MetaTrader 5 for **Deriv**, **XAUUSD / GOLD** only.
 
-> **IFVG SENTINEL DOES NOT TRADE BECAUSE IT CAN.**
-> **IFVG SENTINEL TRADES ONLY BECAUSE THE COMPLETE STRATEGY SAYS TO TRADE.**
+This repository still contains the previous **IFVG Sentinel** sources (`MQL5/Experts/IFVG_Sentinel.mq5`, `MQL5/Include/IFVG/`) so that implementation can be compared and recovered from Git history. **The live product is MACHINE MAKER.**
 
-Discipline > fréquence > profit.
+> MACHINE MAKER does not trade because it can.
+> It trades only when Daily + H4 agree, an M15 FVG sits on the correct side of 50%, and one of the two entry models confirms on a closed candle.
 
-## Ce que le robot fait
+## Strategy
 
-Il exécute mécaniquement la chaîne IFVG :
+```
+Daily direction → H4 confirmation → M15 FVG in discount/premium
+→ Model 1 (wick into FVG + close outside) or Model 2 (FVG 50% + close back)
+→ Structural SL (FVG or Fib 0.62) → TP at 1:4
+```
 
-HTF Context → PD Array → Liquidity → Sweep → SMT (SKIPPED in Gold-only) → CISD → Displacement → FVG → Inversion → IFVG → Retest → Entry → SL / TP
+No SMT, no IFVG conversion, no CISD, no liquidity sweep, no order blocks.
 
-Par défaut **`InpGoldOnlyMode = true`** : le robot trade XAUUSD uniquement. Il ne dépend pas de USDX/XAGUSD. Le SMT externe n’est **pas** un blocker (`SMT = SKIPPED_GOLD_ONLY`). Aucun faux SMT n’est calculé.
+## Safety
 
-Une condition isolée **ne déclenche jamais** une entrée. Si une condition obligatoire manque : **NO TRADE**.
-
-## Protections non négociables
-
-| Règle | Plafond code |
+| Rule | Code floor |
 |---|---|
-| Lot maximum | **0.01** (hard-coded, `MathMin(..., 0.01)`) |
-| Positions simultanées | **2** |
-| Après 2 SL consécutifs | **cooldown 8 heures** (persistant via Global Variables) |
-| Martingale / grid / averaging | **interdit** — aucune logique de ce type |
-| R:R minimum | **1:3** (ou 1:4 via `TargetRR`) |
+| Gold only | XAU / GOLD in the symbol name |
+| Max lot | **0.01** |
+| Max positions | **2** |
+| 2 consecutive SL | **8 hour cooldown** (persisted) |
+| Starting capital × 5 | **WITHDRAWAL_REQUIRED** until manual reset |
+| Martingale / grid / averaging | forbidden |
+| Target RR | **1:4** |
+| Chart/tester TF | ignored — internals are D1 / H4 / M15 |
 
-Même si l’input `MaxLot` est mis à `0.10`, le lot final reste `0.01`.
+Small-capital default: `InpStartingCapital=50`, `InpRiskMoney=10`.
 
-## Arborescence
+## Tree
 
 ```
 MQL5/
-  Experts/IFVG_Sentinel.mq5
-  Include/IFVG/*.mqh
-docs/
-tests/
+  Experts/Machine_Maker.mq5          ← current EA
+  Experts/IFVG_Sentinel.mq5          ← previous strategy (kept)
+  Include/MachineMaker/*.mqh
+  Include/IFVG/*.mqh                 ← previous strategy (kept)
+docs/MACHINE_MAKER_RULES.md
+tests/test_machine_maker.py
+tests/test_machine_maker_structure.py
 ```
 
-## Installation rapide
+## Install
 
-Voir [docs/INSTALL_DERIV.md](docs/INSTALL_DERIV.md).
+Copy `MQL5/Experts/Machine_Maker.mq5` and `MQL5/Include/MachineMaker/` into the Deriv MT5 data folder. Compile with MetaEditor (F7). Attach to **XAUUSD**. Tester timeframe may be M1/M5/M15/H1; strategy TFs stay D1/H4/M15.
 
-Copier :
-
-- `MQL5/Experts/IFVG_Sentinel.mq5` → `MQL5/Experts/`
-- `MQL5/Include/IFVG/` → `MQL5/Include/IFVG/`
-
-Compiler dans MetaEditor (`F7`). Attacher sur **XAUUSD** (ou le symbole Deriv équivalent).
-
-## Documentation
-
-| Document | Contenu |
-|---|---|
-| [docs/ALGORITHMIC_RULES.md](docs/ALGORITHMIC_RULES.md) | Traduction mesurable de chaque concept |
-| [docs/AMBIGUOUS_RULES.md](docs/AMBIGUOUS_RULES.md) | Interprétations explicites (pas de subjectivité silencieuse) |
-| [docs/PARAMETERS.md](docs/PARAMETERS.md) | Liste des inputs |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Guide de configuration |
-| [docs/BACKTESTING.md](docs/BACKTESTING.md) | Config A (RR=3) vs Config B (RR=4) |
-| [docs/INSTALL_DERIV.md](docs/INSTALL_DERIV.md) | Installation Deriv MT5 |
-| [docs/DECISION_JOURNAL.md](docs/DECISION_JOURNAL.md) | Format des logs |
-| [docs/TEST_REPORT.md](docs/TEST_REPORT.md) | Rapport des tests de sécurité |
-
-## Tests locaux (sans MetaEditor)
+## Tests
 
 ```bash
+python3 tests/test_machine_maker.py
+python3 tests/test_machine_maker_structure.py
 python3 tests/test_safety_rules.py
 python3 tests/test_mql5_structure.py
 ```
 
-Ces tests valident les plafonds (lot, positions, cooldown, confluence, R:R). La compilation `.ex5` doit être faite dans MetaEditor sur Windows / le terminal Deriv.
+Deterministic interpretations: [docs/MACHINE_MAKER_RULES.md](docs/MACHINE_MAKER_RULES.md).
 
-## Avant le réel
-
-**BACKTEST → DEMO Deriv → FORWARD TEST → seulement ensuite REAL ACCOUNT.**
+**BACKTEST → DEMO → FORWARD TEST → only then a real account.**
