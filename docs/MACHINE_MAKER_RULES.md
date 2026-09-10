@@ -13,17 +13,23 @@ Closed-candle confirmed swings (`swing_left` / `swing_right`, default 2).
 
 Daily is computed first, then H4. Trade only when both agree and are non-neutral.
 
-Swings for Fibonacci are the most recent confirmed **H4** swing high and swing low (the same pair used for H4 bias).
+Direction still uses confirmed D1/H4 swings. Fibonacci no longer uses that pair.
 
 ## Fibonacci
 
-Range = H4 swing high − H4 swing low.
+Anchors are the last available H4 extremes in `InpStructureLookback` **closed** bars (the forming H4 bar is excluded). This is **not** confirmed-swing detection (no left/right fractal).
+
+- LastHigh = highest `high` in that window
+- LastLow = lowest `low` in that window
+- Chronological order of those two bars does not change the levels
+
+Range = LastHigh − LastLow.
 
 - 0.50 = midpoint
-- Bullish 0.62 = swing_high − 0.62 × range (retracement from the impulse high toward the low)
-- Bearish 0.62 = swing_low + 0.62 × range (retracement from the impulse low toward the high)
+- Bullish 0.62 = LastHigh − 0.62 × range (retracement from the impulse high toward the low)
+- Bearish 0.62 = LastLow + 0.62 × range (retracement from the impulse low toward the high)
 
-This places 0.62 on the same side as discount (bull) / premium (bear), so it can be used as SL protection.
+This places 0.62 on the same side as discount (bull) / premium (bear), so it can be used as SL protection. The 50/62 convention is unchanged; only the anchors changed.
 
 Bullish FVG must lie entirely below 0.50 (`fvg.high < 50%`).
 Bearish FVG must lie entirely above 0.50 (`fvg.low > 50%`).

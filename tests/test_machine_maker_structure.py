@@ -69,6 +69,7 @@ REQUIRED_SNIPPETS = {
         "#define MM_TF_DAILY                  PERIOD_D1",
         "#define MM_TF_H4                     PERIOD_H4",
         "#define MM_TF_M15                    PERIOD_M15",
+        "#define MM_FIB_METHOD                \"LAST_HIGH_LAST_LOW\"",
     ],
     INCLUDE / "Safety.mqh": [
         "LotFromAllowedRisk",
@@ -97,6 +98,14 @@ REQUIRED_SNIPPETS = {
     INCLUDE / "Logger.mqh": [
         "[MACHINE MAKER][RISK]",
         "NO TRADE — ",
+    ],
+    INCLUDE / "FibonacciEngine.mqh": [
+        "MM_FIB_METHOD",
+        "LastHigh=",
+        "LastLow=",
+        "LastHighLastLowFromRates",
+        "BuildFromLastHighLastLow",
+        "Method=",
     ],
 }
 
@@ -254,6 +263,18 @@ def run() -> int:
         errors.append("StateMachine must not lock trading on capital multiple")
     if "m_cd.Active(now)" not in sm or "MM_ST_COOLDOWN" not in sm:
         errors.append("consecutive-SL cooldown must remain in StateMachine")
+    if "BuildFromLastHighLastLow" not in sm:
+        errors.append("Fibonacci must be built from last high / last low")
+    if "dir.h4_high" in sm:
+        errors.append("Fibonacci must not reuse DirectionEngine confirmed H4 swings")
+    direction = (INCLUDE / "DirectionEngine.mqh").read_text(encoding="utf-8")
+    if "MM_IsSwingHigh" not in direction or "MM_IsSwingLow" not in direction:
+        errors.append("Daily/H4 direction must still use confirmed swings")
+    fib = (INCLUDE / "FibonacciEngine.mqh").read_text(encoding="utf-8")
+    if "MM_IsSwingHigh" in fib or "MM_IsSwingLow" in fib:
+        errors.append("FibonacciEngine must not use confirmed-swing detection")
+    if "log.Fib(\"SwingHigh=" in fib or 'Fib("SwingHigh=' in fib:
+        errors.append("Fibonacci logs must not present anchors as swing high/low")
     safety = (INCLUDE / "Safety.mqh").read_text(encoding="utf-8")
     if "ClampLotHardCap" in safety or "MM_HARD_MAX_LOT" in safety:
         errors.append("strategic 0.01 lot hard cap must not remain")

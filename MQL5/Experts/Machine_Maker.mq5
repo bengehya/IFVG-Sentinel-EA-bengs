@@ -1,6 +1,6 @@
 #property copyright   "MACHINE MAKER"
 #property link        "https://github.com"
-#property version     "1.10"
+#property version     "1.20"
 #property description "MACHINE MAKER — Gold-only FVG EA. Percent-of-equity risk. Discipline over frequency."
 
 #include <MachineMaker/Constants.mqh>
