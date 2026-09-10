@@ -56,7 +56,6 @@ string MM_StateToString(const ENUM_MM_STATE st)
       case MM_ST_ORDER_SENT:          return "ORDER_SENT";
       case MM_ST_POSITION_ACTIVE:     return "POSITION_ACTIVE";
       case MM_ST_COOLDOWN:            return "COOLDOWN";
-      case MM_ST_WITHDRAWAL_REQUIRED: return "WITHDRAWAL_REQUIRED";
    }
    return "UNKNOWN";
 }

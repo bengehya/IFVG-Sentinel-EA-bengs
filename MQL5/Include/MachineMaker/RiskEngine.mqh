@@ -30,13 +30,13 @@ private:
       if(!prot_side_ok)
          return MM_SL_FVG_NORMAL;
 
-      const double maxlot_raw = CMMSafety::RiskMoneyFromDistance(spec, raw_dist, MM_HARD_MAX_LOT);
+      const double minlot_raw = CMMSafety::RiskMoneyFromDistance(spec, raw_dist, spec.volume_min);
       if(raw_dist + 1e-12 < prot_dist)
       {
          final_sl = prot;
          return MM_SL_FIB62_SMALL;
       }
-      if(maxlot_raw > allowed + 1e-8 && prot_dist + 1e-12 < raw_dist)
+      if(minlot_raw > allowed + 1e-8 && prot_dist + 1e-12 < raw_dist)
       {
          final_sl = prot;
          return MM_SL_FIB62_LARGE;
@@ -67,9 +67,9 @@ public:
       else
          plan.raw_sl = MM_NormalizePrice(spec, fvg.high + buffer);
 
-      const double balance = AccountInfoDouble(ACCOUNT_BALANCE);
       const double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-      const double allowed = m_cfg.AllowedRiskMoney(balance);
+      const string ccy = AccountInfoString(ACCOUNT_CURRENCY);
+      const double allowed = m_cfg.AllowedRiskMoney(equity);
 
       double final_sl = plan.raw_sl;
       plan.sl_reason = ChooseSL(dir, plan.entry, plan.raw_sl, fib.fib_62, spec, allowed, final_sl);
@@ -106,7 +106,7 @@ public:
       }
 
       string lot_reject = "";
-      plan.lot = CMMSafety::LotFromAllowedRisk(spec, plan.risk_distance, allowed,
+      plan.lot = CMMSafety::LotFromAllowedRisk(spec, plan.risk_distance, allowed, m_cfg.in.max_lot,
                                                plan.theoretical_lot, plan.expected_risk, lot_reject);
       if(m_log != NULL)
       {
@@ -118,15 +118,19 @@ public:
          m_log.Sl("raw SL=" + DoubleToString(plan.raw_sl, spec.digits));
          m_log.Sl("final SL=" + DoubleToString(plan.sl, spec.digits));
          m_log.Sl("reason=" + MM_SlReasonToString(plan.sl_reason));
-         m_log.Risk("Balance=" + DoubleToString(balance, 2));
          m_log.Risk("Equity=" + DoubleToString(equity, 2));
+         m_log.Risk("RiskPercent=" + DoubleToString(m_cfg.in.risk_percent, 2));
          m_log.Risk("AllowedRisk=" + DoubleToString(allowed, 2));
+         m_log.Risk("AccountCurrency=" + ccy);
          m_log.Risk("Entry=" + DoubleToString(plan.entry, spec.digits));
          m_log.Risk("SL=" + DoubleToString(plan.sl, spec.digits));
          m_log.Risk("RiskDistance=" + DoubleToString(plan.risk_distance, spec.digits));
-         m_log.Risk("TheoreticalLot=" + DoubleToString(plan.theoretical_lot, 3));
-         m_log.Risk("FinalLot=" + DoubleToString(plan.lot, 3));
+         m_log.Risk("TheoreticalLot=" + DoubleToString(plan.theoretical_lot, 5));
+         m_log.Risk("FinalLot=" + DoubleToString(plan.lot, 5));
          m_log.Risk("ExpectedRisk=" + DoubleToString(plan.expected_risk, 2));
+         m_log.Risk("VolumeMin=" + DoubleToString(spec.volume_min, 5));
+         m_log.Risk("VolumeMax=" + DoubleToString(spec.volume_max, 5));
+         m_log.Risk("VolumeStep=" + DoubleToString(spec.volume_step, 5));
       }
       if(plan.lot <= 0.0)
       {

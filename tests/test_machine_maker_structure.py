@@ -25,7 +25,6 @@ REQUIRED_MODULES = [
     "FibonacciEngine.mqh",
     "FVGEngine.mqh",
     "EntryModels.mqh",
-    "CapitalGuard.mqh",
     "CooldownManager.mqh",
     "RiskEngine.mqh",
     "PositionManager.mqh",
@@ -53,9 +52,8 @@ ALLOWED_IFVG_MENTIONS = {"SafetySelfTest.mqh"}  # none expected
 REQUIRED_SNIPPETS = {
     EA: [
         "MACHINE MAKER",
-        "InpRiskMoney",
-        "InpStartingCapital",
-        "InpResetCapitalLock",
+        "InpRiskPercent",
+        "InpMaxLot",
         "InpTargetRR",
         "MM_TF_DAILY",
         "MM_IsGoldSymbol",
@@ -63,7 +61,7 @@ REQUIRED_SNIPPETS = {
         "OnTester",
     ],
     INCLUDE / "Constants.mqh": [
-        "#define MM_HARD_MAX_LOT              0.01",
+        "#define MM_DEFAULT_RISK_PERCENT      2.0",
         "#define MM_HARD_MAX_POSITIONS        2",
         "#define MM_HARD_MIN_CONSEC_SL        2",
         "#define MM_HARD_MIN_COOLDOWN_H       8",
@@ -75,22 +73,30 @@ REQUIRED_SNIPPETS = {
     INCLUDE / "Safety.mqh": [
         "LotFromAllowedRisk",
         "RiskMoneyFromDistance",
-        "CapitalTargetReached",
-        "ClampLotHardCap",
+        "AllowedRiskMoney",
+        "VolumeRespectsBroker",
+        "TheoreticalLotFromRisk",
     ],
     INCLUDE / "StateMachine.mqh": [
         "MM_ST_WAITING_FOR_RETEST",
-        "MM_ST_WITHDRAWAL_REQUIRED",
+        "MM_ST_COOLDOWN",
         "full break through FVG",
         "WAITING_FOR_RETEST",
     ],
     INCLUDE / "TradeManager.mqh": [
-        "broker rejected: insufficient margin",
+        "insufficient margin",
+        "OrderCheck",
     ],
-    INCLUDE / "CapitalGuard.mqh": [
-        "InpResetCapitalLock",
-        "WITHDRAWAL_REQUIRED",
-        "MM_GV_CAP_LOCKED",
+    INCLUDE / "RiskEngine.mqh": [
+        "ACCOUNT_EQUITY",
+        "ACCOUNT_CURRENCY",
+        "AllowedRisk=",
+        "TheoreticalLot=",
+        "VolumeMin=",
+    ],
+    INCLUDE / "Logger.mqh": [
+        "[MACHINE MAKER][RISK]",
+        "NO TRADE — ",
     ],
 }
 
@@ -232,13 +238,31 @@ def run() -> int:
     ea_text = EA.read_text(encoding="utf-8") if EA.exists() else ""
     if "InpTargetRR            = 4.0" not in ea_text:
         errors.append("default RR must be 1:4")
-    if "InpUseRiskPercent      = false" not in ea_text or "InpRiskMoney           = 10.0" not in ea_text:
-        errors.append("fixed monetary risk defaults missing")
+    if "InpRiskPercent         = 2.0" not in ea_text:
+        errors.append("default InpRiskPercent must be 2.0")
+    if "InpStartingCapital" in ea_text or "InpRiskMoney" in ea_text:
+        errors.append("fixed $50 / $10 capital inputs must not remain")
+    if "InpMaxLot              = 0.0" not in ea_text:
+        errors.append("InpMaxLot default must be 0 (broker max only)")
     trade = (INCLUDE / "TradeManager.mqh").read_text(encoding="utf-8")
     if "MarginIsSufficient" in trade:
         errors.append("margin must not be a strategy filter")
+    if "OrderCheck" not in trade:
+        errors.append("TradeManager must OrderCheck before send")
+    sm = (INCLUDE / "StateMachine.mqh").read_text(encoding="utf-8")
+    if "WITHDRAWAL_REQUIRED" in sm or "CapitalGuard" in sm:
+        errors.append("StateMachine must not lock trading on capital multiple")
+    if "m_cd.Active(now)" not in sm or "MM_ST_COOLDOWN" not in sm:
+        errors.append("consecutive-SL cooldown must remain in StateMachine")
+    safety = (INCLUDE / "Safety.mqh").read_text(encoding="utf-8")
+    if "ClampLotHardCap" in safety or "MM_HARD_MAX_LOT" in safety:
+        errors.append("strategic 0.01 lot hard cap must not remain")
+    if (INCLUDE / "CapitalGuard.mqh").exists():
+        errors.append("CapitalGuard.mqh must be removed")
     for src in sources:
         text = src.read_text(encoding="utf-8")
+        if "USC" in text or re.search(r"USD\s*\*\s*100", text):
+            errors.append(f"{src.name}: hardcoded USD/USC conversion is forbidden")
         if src.name == "Utils.mqh":
             continue
         if re.search(r"\b_Period\b", text) or re.search(r"\bPeriod\s*\(", text):

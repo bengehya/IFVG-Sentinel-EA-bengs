@@ -1,7 +1,7 @@
 #property copyright   "MACHINE MAKER"
 #property link        "https://github.com"
-#property version     "1.00"
-#property description "MACHINE MAKER — Gold-only FVG EA for small capital. Discipline over frequency."
+#property version     "1.10"
+#property description "MACHINE MAKER — Gold-only FVG EA. Percent-of-equity risk. Discipline over frequency."
 
 #include <MachineMaker/Constants.mqh>
 #include <MachineMaker/Types.mqh>
@@ -15,7 +15,6 @@
 #include <MachineMaker/FibonacciEngine.mqh>
 #include <MachineMaker/FVGEngine.mqh>
 #include <MachineMaker/EntryModels.mqh>
-#include <MachineMaker/CapitalGuard.mqh>
 #include <MachineMaker/CooldownManager.mqh>
 #include <MachineMaker/RiskEngine.mqh>
 #include <MachineMaker/PositionManager.mqh>
@@ -27,15 +26,10 @@
 
 input group "=== MACHINE MAKER ==="
 input string InpSymbol              = "XAUUSD";
-input double InpStartingCapital     = 50.0;
-input double InpCapitalMultiple     = 5.0;
-input bool   InpResetCapitalLock    = false;
 
 input group "=== RISK ==="
-input double InpMaxLot              = 0.01;
-input bool   InpUseRiskPercent      = false;
-input double InpRiskMoney           = 10.0;
-input double InpRiskPercent         = 5.0;
+input double InpRiskPercent         = 2.0;
+input double InpMaxLot              = 0.0; // 0 = broker SYMBOL_VOLUME_MAX only
 input double InpTargetRR            = 4.0;
 input int    InpMaxPositions        = 2;
 input int    InpSLBufferPoints      = 50;
@@ -65,7 +59,6 @@ CMMPersistence      g_store;
 CMMSymbolProvider   g_sym;
 CMMDirectionEngine  g_dir;
 CMMFVGEngine        g_fvg;
-CMMCapitalGuard     g_cap;
 CMMCooldownManager  g_cd;
 CMMRiskEngine       g_risk;
 CMMPositionManager  g_pos;
@@ -84,12 +77,7 @@ string WorkingSymbol()
 void LoadInputs()
 {
    g_cfg.in.symbol = WorkingSymbol();
-   g_cfg.in.starting_capital = InpStartingCapital;
-   g_cfg.in.capital_multiple = InpCapitalMultiple;
-   g_cfg.in.reset_capital_lock = InpResetCapitalLock;
    g_cfg.in.max_lot = InpMaxLot;
-   g_cfg.in.use_risk_percent = InpUseRiskPercent;
-   g_cfg.in.risk_money = InpRiskMoney;
    g_cfg.in.risk_percent = InpRiskPercent;
    g_cfg.in.target_rr = InpTargetRR;
    g_cfg.in.max_positions = InpMaxPositions;
@@ -148,7 +136,10 @@ int OnInit()
       g_log.Error("internal timeframe lock mismatch");
       return INIT_FAILED;
    }
-   g_log.Info("Gold-only FVG strategy. RR 1:4. MaxLot 0.01. Internal TFs locked D1/H4/M15.");
+   g_log.Info("Gold-only FVG strategy. RR 1:4. RiskPercent of equity. Lot follows broker volume limits.");
+   g_log.Info("AccountCurrency=" + AccountInfoString(ACCOUNT_CURRENCY) +
+              " Equity=" + DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2) +
+              " RiskPercent=" + DoubleToString(g_cfg.in.risk_percent, 2));
 
    if(!MM_IsGoldSymbol(symbol))
    {
@@ -166,9 +157,9 @@ int OnInit()
    g_sym.SetLogger(&g_log);
    if(!g_sym.Refresh(symbol))
       return INIT_FAILED;
-   if(!CMMSafety::BrokerAllowsHardCap(g_sym.Spec()))
+   if(!CMMSafety::BrokerVolumeUsable(g_sym.Spec()))
    {
-      g_log.Error("broker volume_min > 0.01 — refusing to trade");
+      g_log.Error("broker volume/tick spec unusable — refusing to trade");
       return INIT_FAILED;
    }
 
@@ -176,13 +167,12 @@ int OnInit()
    g_dir.Init(&g_cfg, &g_log);
    g_fvg.Init(&g_cfg, &g_log);
    g_fvg.SetSpec(g_sym.Spec());
-   g_cap.Init(&g_cfg, &g_log, &g_store);
    g_cd.Init(&g_cfg, &g_log, &g_store);
    g_risk.Init(&g_cfg, &g_log);
    g_pos.Init(&g_cfg, symbol);
    g_trade.Init(&g_cfg, &g_log);
    g_stats.Init(&g_log, g_cfg.in.target_rr);
-   g_sm.Bind(&g_cfg, &g_log, &g_dir, &g_fvg, &g_risk, &g_trade, &g_pos, &g_cd, &g_cap, &g_stats, &g_sym);
+   g_sm.Bind(&g_cfg, &g_log, &g_dir, &g_fvg, &g_risk, &g_trade, &g_pos, &g_cd, &g_stats, &g_sym);
    g_dash.Init(g_cfg.in.enable_dashboard && !MQLInfoInteger(MQL_TESTER));
    EventSetTimer(1);
    return INIT_SUCCEEDED;
@@ -199,7 +189,7 @@ void OnDeinit(const int reason)
 void OnTick()
 {
    g_sm.Process();
-   g_dash.Render(g_cfg.in.symbol, g_sm, g_cd, g_pos, g_cap, g_cfg);
+   g_dash.Render(g_cfg.in.symbol, g_sm, g_cd, g_pos, g_cfg);
 }
 
 void OnTimer()

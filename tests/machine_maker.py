@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-HARD_MAX_LOT = 0.01
+import math
+
 HARD_MAX_POSITIONS = 2
 HARD_MIN_CONSEC_SL = 2
 HARD_MIN_COOLDOWN_H = 8
 HARD_TARGET_RR = 4.0
-CAPITAL_MULTIPLE = 5.0
-DEFAULT_RISK_MONEY = 10.0
+DEFAULT_RISK_PERCENT = 2.0
 TF_DAILY = "PERIOD_D1"
 TF_H4 = "PERIOD_H4"
 TF_M15 = "PERIOD_M15"
@@ -21,7 +21,6 @@ SL_FVG, SL_FIB62_LARGE, SL_FIB62_SMALL = 1, 2, 3
 ST_IDLE = "IDLE"
 ST_WAITING_RETEST = "WAITING_FOR_RETEST"
 ST_COOLDOWN = "COOLDOWN"
-ST_WITHDRAWAL = "WITHDRAWAL_REQUIRED"
 
 
 def is_gold_symbol(symbol: str) -> bool:
@@ -151,6 +150,12 @@ def detect_entry(direction: int, candle: dict, fvg_high: float, fvg_low: float) 
     return MODEL_NONE
 
 
+def allowed_risk_money(equity: float, risk_percent: float = DEFAULT_RISK_PERCENT) -> float:
+    if equity <= 0.0 or risk_percent <= 0.0:
+        return 0.0
+    return equity * risk_percent / 100.0
+
+
 def risk_money(tick_size: float, tick_value: float, distance: float, volume: float) -> float:
     if tick_size <= 0 or tick_value <= 0 or distance <= 0 or volume <= 0:
         return 0.0
@@ -164,37 +169,84 @@ def theoretical_lot(tick_size: float, tick_value: float, distance: float, allowe
     return allowed / rpl
 
 
-def lot_from_allowed_risk(tick_size: float, tick_value: float, distance: float, allowed: float,
-                          volume_min: float = 0.01, volume_step: float = 0.01) -> tuple[float, float, float, str]:
+def effective_max_volume(volume_max: float, input_max_lot: float) -> float:
+    if volume_max <= 0.0:
+        return 0.0
+    if input_max_lot > 0.0:
+        return min(input_max_lot, volume_max)
+    return volume_max
+
+
+def clamp_to_broker_volume(lot: float, volume_max: float, input_max_lot: float) -> float:
+    if lot <= 0.0:
+        return 0.0
+    cap = effective_max_volume(volume_max, input_max_lot)
+    if cap <= 0.0:
+        return 0.0
+    return min(lot, cap)
+
+
+def normalize_volume(volume: float, volume_step: float) -> float:
+    if volume_step > 0.0:
+        volume = math.floor(volume / volume_step + 1e-12) * volume_step
+    return volume
+
+
+def lot_from_allowed_risk(
+    tick_size: float,
+    tick_value: float,
+    distance: float,
+    allowed: float,
+    volume_min: float = 0.01,
+    volume_step: float = 0.01,
+    volume_max: float = 100.0,
+    input_max_lot: float = 0.0,
+) -> tuple[float, float, float, str]:
     theo = theoretical_lot(tick_size, tick_value, distance, allowed)
     if theo <= 0:
         return 0.0, 0.0, 0.0, "calculated lot below broker minimum"
     min_risk = risk_money(tick_size, tick_value, distance, volume_min)
-    lot = min(theo, HARD_MAX_LOT)
+    lot = clamp_to_broker_volume(theo, volume_max, input_max_lot)
     if lot + 1e-12 < volume_min:
         if min_risk > allowed + 1e-8:
             return theo, 0.0, min_risk, "minimum lot exceeds risk limit"
         lot = volume_min
-    lot = int(lot / volume_step + 1e-12) * volume_step
-    lot = min(lot, HARD_MAX_LOT)
+    lot = normalize_volume(lot, volume_step)
+    lot = clamp_to_broker_volume(lot, volume_max, input_max_lot)
+    if lot + 1e-12 < volume_min:
+        if min_risk > allowed + 1e-8:
+            return theo, 0.0, min_risk, "minimum lot exceeds risk limit"
+        return theo, 0.0, 0.0, "calculated lot below broker minimum"
     actual = risk_money(tick_size, tick_value, distance, lot)
     if actual > allowed + 1e-8:
         return theo, 0.0, actual, "minimum lot exceeds risk limit"
+    cap = effective_max_volume(volume_max, input_max_lot)
+    if lot > cap + 1e-12:
+        return theo, 0.0, actual, "lot exceeds broker volume max"
     return theo, lot, actual, ""
 
 
-def choose_sl(direction: int, entry: float, raw_sl: float, fib62: float, buffer: float,
-              tick_size: float, tick_value: float, allowed: float) -> tuple[float, int]:
+def choose_sl(
+    direction: int,
+    entry: float,
+    raw_sl: float,
+    fib62: float,
+    buffer: float,
+    tick_size: float,
+    tick_value: float,
+    allowed: float,
+    volume_min: float = 0.01,
+) -> tuple[float, int]:
     prot = fib62 - buffer if direction == DIR_BUY else fib62 + buffer
     raw_dist = abs(entry - raw_sl)
     prot_dist = abs(entry - prot)
     prot_ok = (direction == DIR_BUY and prot < entry) or (direction == DIR_SELL and prot > entry)
     if not prot_ok:
         return raw_sl, SL_FVG
-    maxlot_raw = risk_money(tick_size, tick_value, raw_dist, HARD_MAX_LOT)
+    minlot_raw = risk_money(tick_size, tick_value, raw_dist, volume_min)
     if raw_dist + 1e-12 < prot_dist:
         return prot, SL_FIB62_SMALL
-    if maxlot_raw > allowed + 1e-8 and prot_dist + 1e-12 < raw_dist:
+    if minlot_raw > allowed + 1e-8 and prot_dist + 1e-12 < raw_dist:
         return prot, SL_FIB62_LARGE
     return raw_sl, SL_FVG
 
@@ -220,51 +272,6 @@ def cooldown_end(start: int, hours: int = 8) -> int:
 
 def is_cooldown_active(now: int, end: int) -> bool:
     return end > 0 and now < end
-
-
-def capital_target_reached(start: float, multiple: float, balance: float, equity: float) -> bool:
-    if start <= 0 or multiple <= 0:
-        return False
-    target = start * multiple
-    return balance + 1e-8 >= target or equity + 1e-8 >= target
-
-
-class CapitalGuard:
-    """Persisted 5x lock. Restart does not unlock. Manual reset only."""
-
-    def __init__(self, store: dict | None = None):
-        self.store = store if store is not None else {}
-        self.start = 0.0
-        self.target = 0.0
-        self.locked = False
-
-    def init(self, starting_capital: float, balance: float, equity: float, reset: bool = False,
-             multiple: float = CAPITAL_MULTIPLE) -> None:
-        if reset:
-            self.start = balance if balance > 0 else starting_capital
-            self.locked = False
-        else:
-            self.start = float(self.store.get("start", 0.0) or 0.0)
-            self.locked = bool(self.store.get("locked", False))
-            if self.start <= 0:
-                self.start = starting_capital if starting_capital > 0 else balance
-        self.target = self.start * multiple
-        if not self.locked and capital_target_reached(self.start, multiple, balance, equity):
-            self.locked = True
-        self._persist()
-
-    def evaluate(self, balance: float, equity: float, multiple: float = CAPITAL_MULTIPLE) -> None:
-        if not self.locked and capital_target_reached(self.start, multiple, balance, equity):
-            self.locked = True
-            self._persist()
-
-    def _persist(self) -> None:
-        self.store["start"] = self.start
-        self.store["target"] = self.target
-        self.store["locked"] = self.locked
-
-    def can_trade(self) -> bool:
-        return not self.locked
 
 
 def process_wait_ticks(setup: dict, ticks: int, new_m15_every: int = 0) -> dict:

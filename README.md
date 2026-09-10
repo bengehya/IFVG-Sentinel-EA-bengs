@@ -22,15 +22,15 @@ No SMT, no IFVG conversion, no CISD, no liquidity sweep, no order blocks.
 | Rule | Code floor |
 |---|---|
 | Gold only | XAU / GOLD in the symbol name |
-| Max lot | **0.01** |
+| Risk | **InpRiskPercent = 2% of live equity** (recomputed each entry) |
+| Max lot | broker `volume_max` (optional `InpMaxLot`, default 0 = no EA cap) |
 | Max positions | **2** |
 | 2 consecutive SL | **8 hour cooldown** (persisted) |
-| Starting capital × 5 | **WITHDRAWAL_REQUIRED** until manual reset |
 | Martingale / grid / averaging | forbidden |
 | Target RR | **1:4** |
 | Chart/tester TF | ignored — internals are D1 / H4 / M15 |
 
-Small-capital default: `InpStartingCapital=50`, `InpRiskMoney=10`.
+Lot follows AllowedRisk and the structural SL. If the broker minimum lot would exceed AllowedRisk at that SL: **NO TRADE**. Account currency is `ACCOUNT_CURRENCY` — no hardcoded USD/USC conversion, no $50 starting-capital lock.
 
 ## Tree
 

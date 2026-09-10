@@ -9,7 +9,6 @@
 #include "TradeManager.mqh"
 #include "PositionManager.mqh"
 #include "CooldownManager.mqh"
-#include "CapitalGuard.mqh"
 #include "BacktestStats.mqh"
 #include "SymbolProvider.mqh"
 
@@ -24,7 +23,6 @@ private:
    CMMTradeManager    *m_trade;
    CMMPositionManager *m_pos;
    CMMCooldownManager *m_cd;
-   CMMCapitalGuard    *m_cap;
    CMMBacktestStats   *m_stats;
    CMMSymbolProvider  *m_sym;
    SMMSetup            m_setup;
@@ -182,7 +180,7 @@ public:
 
    void Bind(CMMConfig *cfg, CMMLogger *log, CMMDirectionEngine *dir, CMMFVGEngine *fvg,
              CMMRiskEngine *risk, CMMTradeManager *trade, CMMPositionManager *pos,
-             CMMCooldownManager *cd, CMMCapitalGuard *cap, CMMBacktestStats *stats,
+             CMMCooldownManager *cd, CMMBacktestStats *stats,
              CMMSymbolProvider *sym)
    {
       m_cfg = cfg;
@@ -193,7 +191,6 @@ public:
       m_trade = trade;
       m_pos = pos;
       m_cd = cd;
-      m_cap = cap;
       m_stats = stats;
       m_sym = sym;
    }
@@ -209,22 +206,6 @@ public:
 
    void Process()
    {
-      const double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-      const double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-      m_cap.Evaluate(balance, equity);
-      if(m_cap.Locked())
-      {
-         if(m_setup.state != MM_ST_WITHDRAWAL_REQUIRED)
-         {
-            if(m_stats != NULL)
-               m_stats.OnWithdrawalLock();
-            if(m_log != NULL)
-               m_log.State("WITHDRAWAL_REQUIRED — new trades blocked");
-         }
-         m_setup.state = MM_ST_WITHDRAWAL_REQUIRED;
-         return;
-      }
-
       const datetime now = TimeCurrent();
       if(m_cd.Active(now))
       {

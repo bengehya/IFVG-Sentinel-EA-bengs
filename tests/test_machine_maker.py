@@ -12,9 +12,9 @@ from machine_maker import (
     BIAS_BEAR,
     BIAS_BULL,
     BIAS_NEUTRAL,
+    DEFAULT_RISK_PERCENT,
     DIR_BUY,
     DIR_SELL,
-    HARD_MAX_LOT,
     HARD_TARGET_RR,
     MODEL_MID,
     MODEL_NONE,
@@ -26,11 +26,10 @@ from machine_maker import (
     TF_DAILY,
     TF_H4,
     TF_M15,
-    CapitalGuard,
     align_bias,
+    allowed_risk_money,
     bias_from_swings,
     build_fib,
-    capital_target_reached,
     choose_sl,
     completely_broken,
     cooldown_end,
@@ -44,7 +43,7 @@ from machine_maker import (
     model2,
     process_wait_ticks,
     reward_meets_target,
-    risk_money,
+    theoretical_lot,
     three_candle_bearish,
     three_candle_bullish,
     tp_from_rr,
@@ -112,15 +111,14 @@ def run() -> int:
     check("E full break not an entry", detect_entry(DIR_BUY, {"high": 101.0, "low": 99.0, "close": 99.5}, fvg_h, fvg_l) == MODEL_NONE)
     check("E no third model", detect_entry(DIR_BUY, {"high": 103, "low": 102, "close": 102.5}, fvg_h, fvg_l) == MODEL_NONE)
 
-    # F. SL
-    # Gold-like ticks
+    # F. SL (structural — unchanged). Min-lot money uses broker volume_min.
     ts, tv = 0.01, 1.0
     entry = 1400.0
-    raw = 1370.0  # farther than 0.62, 0.01 lot = $30 < $50 allowed
+    raw = 1370.0  # farther than 0.62, min lot 0.01 = $30 < $50 allowed
     fib62 = 1380.0
     sl_n, why_n = choose_sl(DIR_BUY, entry, raw, fib62, 0.0, ts, tv, 50.0)
-    check("F normal FVG SL when 0.01 fits", why_n == SL_FVG and abs(sl_n - raw) < 1e-12)
-    raw_big = 1200.0  # 200 distance, 0.01 lot = $200 > $10, 0.62 closer
+    check("F normal FVG SL when min lot fits", why_n == SL_FVG and abs(sl_n - raw) < 1e-12)
+    raw_big = 1200.0  # 200 distance, min lot 0.01 = $200 > $10, 0.62 closer
     sl_l, why_l = choose_sl(DIR_BUY, entry, raw_big, fib62, 0.0, ts, tv, 10.0)
     check("F large FVG uses 0.62", why_l == SL_FIB62_LARGE and abs(sl_l - fib62) < 1e-12)
     raw_small = 1395.0  # tighter than 1380
@@ -135,14 +133,41 @@ def run() -> int:
     check("G 1:3 is rejected", (not ok3) and abs(rr3 - 3.0) < 1e-9)
     check("G hardcoded target is 4 not 3", abs(HARD_TARGET_RR - 4.0) < 1e-12)
 
-    # H. Risk
-    for bal, money in ((50.0, 10.0), (100.0, 10.0), (200.0, 10.0)):
-        theo, lot, actual, rej = lot_from_allowed_risk(ts, tv, 5.0, money)
-        check(f"H ${bal:.0f} max ${money:.0f} lot<=0.01", lot <= HARD_MAX_LOT + 1e-12 and rej == "")
-    _, lot_cap, _, _ = lot_from_allowed_risk(ts, tv, 1.0, 1000.0)
-    check("H lot never > 0.01", lot_cap <= HARD_MAX_LOT + 1e-12)
-    theo5, lot5, _, rej5 = lot_from_allowed_risk(ts, tv, 15.41, 10.0)
-    check("H wide SL min-lot may NO TRADE", lot5 == 0.0 and "minimum lot exceeds" in rej5, f"theo={theo5:.4f}")
+    # H / money-management spec A–K
+    check("MM-A equity 50 @ 2% → 1", abs(allowed_risk_money(50.0, 2.0) - 1.0) < 1e-12)
+    check("MM-B equity 200 @ 2% → 4", abs(allowed_risk_money(200.0, 2.0) - 4.0) < 1e-12)
+    check("MM-C equity 1000 @ 2% → 20", abs(allowed_risk_money(1000.0, 2.0) - 20.0) < 1e-12)
+    check("MM-D equity 5000 @ 2% → 100", abs(allowed_risk_money(5000.0, 2.0) - 100.0) < 1e-12)
+    check("MM default risk percent is 2.0", abs(DEFAULT_RISK_PERCENT - 2.0) < 1e-12)
+    check(
+        "MM risk recomputed from live equity",
+        abs(allowed_risk_money(980.0, 2.0) - 19.60) < 1e-12,
+    )
+
+    _, lot_e, actual_e, rej_e = lot_from_allowed_risk(ts, tv, 5.0, 20.0)
+    check(
+        "MM-E small SL → larger lot",
+        rej_e == "" and abs(lot_e - 0.04) < 1e-12 and actual_e <= 20.0 + 1e-8,
+        f"lot={lot_e}",
+    )
+    _, lot_f, actual_f, rej_f = lot_from_allowed_risk(ts, tv, 20.0, 20.0)
+    check(
+        "MM-F large SL → smaller lot",
+        rej_f == "" and abs(lot_f - 0.01) < 1e-12 and lot_f < lot_e and actual_f <= 20.0 + 1e-8,
+        f"lot={lot_f}",
+    )
+    theo_g, lot_g, _, rej_g = lot_from_allowed_risk(ts, tv, 18.0, 10.0)
+    check(
+        "MM-G min lot > allowed risk → NO TRADE",
+        lot_g == 0.0 and "minimum lot exceeds" in rej_g,
+        f"theo={theo_g:.4f} rej={rej_g}",
+    )
+    _, lot_h, _, rej_h = lot_from_allowed_risk(ts, tv, 10.0, 37.0, volume_step=0.01)
+    check("MM-H volume step normalized", rej_h == "" and abs(lot_h - 0.03) < 1e-12, f"lot={lot_h}")
+    _, lot_i, _, rej_i = lot_from_allowed_risk(ts, tv, 1.0, 50.0, volume_max=0.10)
+    check("MM-I volume max broker cap", rej_i == "" and abs(lot_i - 0.10) < 1e-12, f"lot={lot_i}")
+    theo_uncapped = theoretical_lot(ts, tv, 1.0, 50.0)
+    check("MM-I theoretical lot computed before broker cap", theo_uncapped > lot_i + 1e-12)
 
     # I. Cooldown
     c = 2
@@ -153,20 +178,25 @@ def run() -> int:
     check("I resume at 8h", not is_cooldown_active(end, end))
     check("I third trade blocked while active", is_cooldown_active(start + 60, end))
 
-    # J. Capital protection
-    store = {}
-    g = CapitalGuard(store)
-    g.init(50.0, 50.0, 50.0, reset=False)
-    check("J start $50 target $250", abs(g.target - 250.0) < 1e-9 and g.can_trade())
-    g.evaluate(250.0, 250.0)
-    check("J $50→$250 locks", g.locked and not g.can_trade())
-    check("J persist lock flag", store["locked"] is True)
-    g2 = CapitalGuard(store)
-    g2.init(50.0, 40.0, 40.0, reset=False)  # restart after DD, still locked
-    check("J restart while locked stays locked", g2.locked and not g2.can_trade())
-    check("J balance drop does not auto-unlock", not capital_target_reached(g2.start, 5.0, 40.0, 40.0) and g2.locked)
-    g2.init(50.0, 80.0, 80.0, reset=True)
-    check("J manual reset reopens", (not g2.locked) and abs(g2.start - 80.0) < 1e-9 and abs(g2.target - 400.0) < 1e-9)
+    # J. Capital lock removed — 5× $50 WITHDRAWAL_REQUIRED must not exist in MM sources.
+    mm_root = Path(__file__).resolve().parents[1]
+    mm_files = [mm_root / "MQL5" / "Experts" / "Machine_Maker.mq5"]
+    mm_files += sorted((mm_root / "MQL5" / "Include" / "MachineMaker").glob("*.mqh"))
+    mm_files += [Path(__file__).resolve().parent / "machine_maker.py"]
+    joined = "\n".join(p.read_text(encoding="utf-8") for p in mm_files if p.exists())
+    check("MM-J no CapitalGuard module", not (mm_root / "MQL5" / "Include" / "MachineMaker" / "CapitalGuard.mqh").exists())
+    check("MM-J no InpStartingCapital", "InpStartingCapital" not in joined)
+    check("MM-J no InpResetCapitalLock", "InpResetCapitalLock" not in joined)
+    check("MM-J no InpCapitalMultiple", "InpCapitalMultiple" not in joined)
+    check("MM-J no WITHDRAWAL_REQUIRED", "WITHDRAWAL_REQUIRED" not in joined)
+    check("MM-J no $50 starting-capital constant", "MM_DEFAULT_STARTING_CAPITAL" not in joined)
+    check("MM-J no 0.01 hard lot cap", "MM_HARD_MAX_LOT" not in joined)
+
+    # K. USC / account currency — no hardcoded USD↔USC conversion.
+    check("MM-K no USC=USD×100 conversion", "USC" not in joined)
+    check("MM-K no USD * 100 conversion", "USD * 100" not in joined and "USD*100" not in joined)
+    check("MM-K uses ACCOUNT_CURRENCY", "ACCOUNT_CURRENCY" in joined)
+    check("MM-K uses ACCOUNT_EQUITY", "ACCOUNT_EQUITY" in joined)
 
     # K. Timeframe independence
     for chart in ("PERIOD_M1", "PERIOD_M5", "PERIOD_M15", "PERIOD_H1"):

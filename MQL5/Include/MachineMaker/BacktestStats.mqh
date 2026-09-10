@@ -39,7 +39,6 @@ public:
       if(m == MM_MODEL_WICK) m_s.model1++;
       if(m == MM_MODEL_MID) m_s.model2++;
    }
-   void OnWithdrawalLock() { m_s.withdrawal_locks++; }
 
    void OnClosedDeal(const double profit, const double risk_money, const bool is_loss)
    {
@@ -83,8 +82,7 @@ public:
       PrintFormat("%sStart balance: %.2f  End balance: %.2f", MM_LOG_PREFIX, m_s.start_balance, end_bal);
       PrintFormat("%sFVGs: %d  Valid setups: %d  Invalidated: %d  Rejected: %d", MM_LOG_PREFIX,
                   m_s.fvgs_seen, m_s.setups_valid, m_s.fvgs_invalidated, m_s.setups_rejected);
-      PrintFormat("%sEntry model1: %d  model2: %d  Withdrawal locks: %d", MM_LOG_PREFIX,
-                  m_s.model1, m_s.model2, m_s.withdrawal_locks);
+      PrintFormat("%sEntry model1: %d  model2: %d", MM_LOG_PREFIX, m_s.model1, m_s.model2);
    }
 
    double OnTester() const
