@@ -1,6 +1,7 @@
 #ifndef MM_STATEMACHINE_MQH
 #define MM_STATEMACHINE_MQH
 
+#include "Safety.mqh"
 #include "DirectionEngine.mqh"
 #include "FibonacciEngine.mqh"
 #include "FVGEngine.mqh"
@@ -32,6 +33,80 @@ private:
    string              m_fib_fp;
    bool                m_logged_wait;
 
+   int FindFvgId(const ulong &ids[], const ulong id) const
+   {
+      const int n = ArraySize(ids);
+      for(int i = 0; i < n; i++)
+      {
+         if(ids[i] == id)
+            return i;
+      }
+      return -1;
+   }
+
+   void SnapshotFvgs(ulong &ids[], int &lives[]) const
+   {
+      const int n = m_fvg.Count();
+      ArrayResize(ids, n);
+      ArrayResize(lives, n);
+      for(int i = 0; i < n; i++)
+      {
+         const SMMFVG f = m_fvg.At(i);
+         ids[i] = f.id;
+         lives[i] = (int)f.life;
+      }
+   }
+
+   void AccountFvgScan(const ulong &ids[], const int &lives[])
+   {
+      if(m_stats == NULL)
+         return;
+      const int n = m_fvg.Count();
+      for(int i = 0; i < n; i++)
+      {
+         const SMMFVG f = m_fvg.At(i);
+         const int prev = FindFvgId(ids, f.id);
+         if(prev < 0)
+         {
+            m_stats.OnFvgDetected();
+            if(f.life == MM_FVG_INVALIDATED)
+               m_stats.OnFvgInvalidated();
+            else if(f.life == MM_FVG_EXPIRED)
+               m_stats.OnFvgExpired();
+         }
+         else
+         {
+            const int old_life = lives[prev];
+            if(old_life == (int)MM_FVG_VALID && f.life == MM_FVG_INVALIDATED)
+               m_stats.OnFvgInvalidated();
+            else if(old_life == (int)MM_FVG_VALID && f.life == MM_FVG_EXPIRED)
+               m_stats.OnFvgExpired();
+         }
+      }
+   }
+
+   void RememberFill(const SMMEntryPlan &plan)
+   {
+      if(m_stats == NULL)
+         return;
+      SMMOpenTrade rec;
+      ZeroMemory(rec);
+      rec.position_id = m_trade.LastPositionId();
+      rec.entry = m_trade.LastFillPrice();
+      if(rec.entry <= 0.0)
+         rec.entry = plan.entry;
+      rec.sl = plan.sl;
+      rec.volume = m_trade.LastVolume();
+      if(rec.volume <= 0.0)
+         rec.volume = plan.lot;
+      rec.risk_distance = MathAbs(rec.entry - rec.sl);
+      rec.risk_money = CMMSafety::RiskMoneyFromDistance(m_sym.Spec(), rec.risk_distance, rec.volume);
+      rec.direction = plan.direction;
+      rec.model = plan.model;
+      rec.fvg_id = plan.fvg_id;
+      m_stats.RememberOpen(rec);
+   }
+
    void GoIdle(const string why)
    {
       const ulong old = m_setup.setup_id;
@@ -52,9 +127,13 @@ private:
 
    void InvalidateFVG(const string why)
    {
+      SMMFVG live;
+      const bool was_valid = (m_setup.fvg.id != 0 &&
+                               m_fvg.GetById(m_setup.fvg.id, live) &&
+                               live.life == MM_FVG_VALID);
       if(m_setup.fvg.id != 0)
          m_fvg.MarkLife(m_setup.fvg.id, MM_FVG_INVALIDATED);
-      if(m_stats != NULL)
+      if(was_valid && m_stats != NULL)
          m_stats.OnFvgInvalidated();
       if(m_log != NULL)
          m_log.Fvg("Decision=INVALIDATED reason=" + why);
@@ -140,7 +219,7 @@ private:
          m_setup.plan = plan;
          m_setup.last_reject = plan.reject_reason;
          if(m_stats != NULL)
-            m_stats.OnRejected();
+            m_stats.OnSetupRejected();
          if(m_log != NULL)
             m_log.NoTrade(plan.reject_reason);
          m_setup.state = MM_ST_WAITING_FOR_RETEST;
@@ -150,15 +229,21 @@ private:
       if(m_stats != NULL)
       {
          m_stats.OnValidSetup();
-         m_stats.OnModel(model);
+         m_stats.OnOrderAttempt();
       }
       if(!m_trade.Open(*m_sym, plan, reason))
       {
          m_setup.last_reject = reason;
          if(m_stats != NULL)
-            m_stats.OnRejected();
+            m_stats.OnOrderRejected();
          m_setup.state = MM_ST_WAITING_FOR_RETEST;
          return false;
+      }
+      if(m_stats != NULL)
+      {
+         m_stats.OnTradeExecuted(model);
+         m_stats.OnFvgTraded();
+         RememberFill(plan);
       }
       m_fvg.MarkLife(m_setup.fvg.id, MM_FVG_TRADED);
       m_setup.state = MM_ST_ORDER_SENT;
@@ -258,7 +343,13 @@ public:
       CMMFibonacciEngine::LogOnce(m_log, fib, m_fib_fp);
 
       if(new_m15 || m_setup.fvg.id == 0)
+      {
+         ulong prev_ids[];
+         int prev_lives[];
+         SnapshotFvgs(prev_ids, prev_lives);
          m_fvg.Scan(m_sym.SymbolName(), fib, m_setup.direction);
+         AccountFvgScan(prev_ids, prev_lives);
+      }
 
       if(m_setup.fvg.id != 0)
       {
@@ -288,8 +379,6 @@ public:
          m_setup.setup_id = found.id;
          m_setup.state = MM_ST_WAITING_FOR_RETEST;
          m_logged_wait = false;
-         if(m_stats != NULL)
-            m_stats.OnFvgSeen();
          if(m_log != NULL)
          {
             m_log.Fvg("Direction=" + MM_DirToString(found.direction));

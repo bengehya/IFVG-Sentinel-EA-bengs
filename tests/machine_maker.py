@@ -311,3 +311,85 @@ def process_wait_ticks(setup: dict, ticks: int, new_m15_every: int = 0) -> dict:
             continue
         setup["m15_checks"] = setup.get("m15_checks", 0) + 1
     return setup
+
+
+def copy_rates_ok(got: int, count: int) -> bool:
+    """Mirrors MM_CopyRatesSafe: require the requested bar count, no silent short history."""
+    return got >= count
+
+
+def reset_persisted_state(store: dict, is_tester: bool) -> dict:
+    """Tester-only wipe. Live must keep cooldown keys."""
+    if not is_tester:
+        return dict(store)
+    return {}
+
+
+def realized_r(profit: float, initial_risk_money: float) -> float:
+    if initial_risk_money <= 0.0:
+        return 0.0
+    return profit / initial_risk_money
+
+
+def r_from_open_ledger(entry: float, sl: float, volume: float, profit: float,
+                       tick_size: float = 0.01, tick_value: float = 1.0) -> float:
+    initial = risk_money(tick_size, tick_value, abs(entry - sl), volume)
+    return realized_r(profit, initial)
+
+
+class Accounting:
+    """Reporting-only counters. Does not decide whether a setup is valid."""
+
+    def __init__(self) -> None:
+        self.fvgs_detected = 0
+        self.fvgs_invalidated = 0
+        self.fvgs_expired = 0
+        self.fvgs_traded = 0
+        self.setups_valid = 0
+        self.setups_rejected = 0
+        self.order_attempts = 0
+        self.orders_rejected = 0
+        self.trades_executed = 0
+        self.trades_closed = 0
+        self.model1_executed = 0
+        self.model2_executed = 0
+        self.ledger: dict[int, float] = {}
+
+    def on_new_fvg(self, already_invalid: bool = False, already_expired: bool = False) -> None:
+        self.fvgs_detected += 1
+        if already_invalid:
+            self.fvgs_invalidated += 1
+        elif already_expired:
+            self.fvgs_expired += 1
+
+    def on_life(self, was_valid: bool, now: str) -> None:
+        if not was_valid:
+            return
+        if now == "invalidated":
+            self.fvgs_invalidated += 1
+        elif now == "expired":
+            self.fvgs_expired += 1
+
+    def plan_fail(self) -> None:
+        self.setups_rejected += 1
+
+    def plan_ok_open_fail(self) -> None:
+        self.setups_valid += 1
+        self.order_attempts += 1
+        self.orders_rejected += 1
+
+    def plan_ok_open_ok(self, model: int, pos_id: int, risk_money: float) -> None:
+        self.setups_valid += 1
+        self.order_attempts += 1
+        self.trades_executed += 1
+        self.fvgs_traded += 1
+        if model == MODEL_WICK:
+            self.model1_executed += 1
+        if model == MODEL_MID:
+            self.model2_executed += 1
+        self.ledger[pos_id] = risk_money
+
+    def close(self, pos_id: int) -> float:
+        self.trades_closed += 1
+        return self.ledger.pop(pos_id, 0.0)
+

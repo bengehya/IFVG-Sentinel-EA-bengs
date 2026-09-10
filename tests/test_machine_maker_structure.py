@@ -241,12 +241,60 @@ def run() -> int:
     utils = (INCLUDE / "Utils.mqh").read_text(encoding="utf-8")
     if "if(tf == PERIOD_CURRENT)" not in utils:
         errors.append("CopyRates must reject PERIOD_CURRENT")
+    if "got > 10" in utils:
+        errors.append("CopyRates must not silently accept short history")
+    if "insufficient history" not in utils:
+        errors.append("CopyRates must log insufficient history")
+    if "got >= count" not in utils and "got < count" not in utils:
+        errors.append("CopyRates must require the requested bar count")
     if "PERIOD_CURRENT: return 0" not in utils.replace(" ", ""):
         if "case PERIOD_CURRENT: return 0" not in utils.replace("\n", " ").replace("  ", " "):
             pass
     ea_text = EA.read_text(encoding="utf-8") if EA.exists() else ""
     if "InpTargetRR            = 4.0" not in ea_text:
         errors.append("default RR must be 1:4")
+    if "if(MQLInfoInteger(MQL_TESTER))" not in ea_text or "ResetTesterState" not in ea_text:
+        errors.append("tester-only persisted-state reset missing")
+    if "ClosedTradeRiskDistance" in ea_text:
+        errors.append("close R must not reconstruct SL from a vanished position")
+    if "RecallRiskMoney" not in ea_text:
+        errors.append("close R must use persisted open-trade risk")
+    persist = (INCLUDE / "Persistence.mqh").read_text(encoding="utf-8")
+    if "if(!MQLInfoInteger(MQL_TESTER))" not in persist:
+        errors.append("ResetTesterState must no-op outside the tester")
+    if persist.count("ResetTesterState") != 1:
+        errors.append("ResetTesterState must exist once, in Persistence only")
+    types = (INCLUDE / "Types.mqh").read_text(encoding="utf-8")
+    stats_m = re.search(r"struct\s+SMMStats\s*\{(.*?)\n\};", types, re.S)
+    if not stats_m:
+        errors.append("SMMStats struct missing")
+    else:
+        fields = re.findall(r"\b(?:int|double|bool|string|ulong|datetime)\s+(\w+)\s*;", stats_m.group(1))
+        dupes = sorted({f for f in fields if fields.count(f) > 1})
+        if dupes:
+            errors.append("SMMStats duplicate fields: " + ", ".join(dupes))
+        required = {
+            "fvgs_detected", "fvgs_invalidated", "fvgs_expired", "fvgs_traded",
+            "setups_valid", "setups_rejected", "order_attempts", "orders_rejected",
+            "trades_executed", "trades_closed", "wins", "losses",
+            "model1_executed", "model2_executed", "total_r",
+        }
+        missing = sorted(required - set(fields))
+        if missing:
+            errors.append("SMMStats missing fields: " + ", ".join(missing))
+        banned = {"trades", "fvgs_seen", "model1", "model2"} & set(fields)
+        if banned:
+            errors.append("SMMStats must not keep legacy aliases: " + ", ".join(sorted(banned)))
+    if "ArrayResize(rates, 0)" not in utils:
+        errors.append("CopyRates must discard partial bars on skip")
+    stats = (INCLUDE / "BacktestStats.mqh").read_text(encoding="utf-8")
+    if "OnTradeExecuted" not in stats or "OnOrderAttempt" not in stats:
+        errors.append("executed vs attempt counters missing")
+    if "RememberOpen" not in stats:
+        errors.append("open-trade risk ledger missing")
+    sm = (INCLUDE / "StateMachine.mqh").read_text(encoding="utf-8")
+    if "OnTradeExecuted" not in sm or "OnOrderRejected" not in sm:
+        errors.append("StateMachine must count execute/reject separately from valid setups")
     if "InpRiskPercent         = 2.0" not in ea_text:
         errors.append("default InpRiskPercent must be 2.0")
     if "InpStartingCapital" in ea_text or "InpRiskMoney" in ea_text:

@@ -15,6 +15,9 @@ private:
    CTrade     m_trade;
    ulong      m_last_fvg_id;
    datetime   m_last_send_time;
+   ulong      m_last_position_id;
+   double     m_last_fill_price;
+   double     m_last_volume;
 
    bool PreTradeChecks(const CMMSymbolProvider &sym, const SMMEntryPlan &plan, string &reason)
    {
@@ -101,6 +104,9 @@ public:
    {
       m_last_fvg_id = 0;
       m_last_send_time = 0;
+      m_last_position_id = 0;
+      m_last_fill_price = 0.0;
+      m_last_volume = 0.0;
    }
 
    void Init(CMMConfig *cfg, CMMLogger *log)
@@ -149,8 +155,20 @@ public:
       }
       m_last_fvg_id = plan.fvg_id;
       m_last_send_time = TimeCurrent();
+      m_last_fill_price = m_trade.ResultPrice();
+      m_last_volume = (filled > 0.0 ? filled : plan.lot);
+      m_last_position_id = 0;
+      const ulong deal = m_trade.ResultDeal();
+      if(deal != 0 && HistoryDealSelect(deal))
+         m_last_position_id = (ulong)HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+      if(m_last_position_id == 0 && PositionSelect(sym.SymbolName()))
+         m_last_position_id = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
       return true;
    }
+
+   ulong LastPositionId() const { return m_last_position_id; }
+   double LastFillPrice() const { return m_last_fill_price; }
+   double LastVolume() const { return m_last_volume; }
 };
 
 #endif
