@@ -27,8 +27,7 @@ enum ENUM_MM_STATE
    MM_ST_ENTRY_VALIDATION     = 4,
    MM_ST_ORDER_SENT           = 5,
    MM_ST_POSITION_ACTIVE      = 6,
-   MM_ST_COOLDOWN             = 7,
-   MM_ST_WITHDRAWAL_REQUIRED  = 8
+   MM_ST_COOLDOWN             = 7
 };
 
 enum ENUM_MM_FVG_LIFE
@@ -161,7 +160,6 @@ struct SMMStats
    int    fvgs_invalidated;
    int    model1;
    int    model2;
-   int    withdrawal_locks;
    double gross_profit;
    double gross_loss;
    double max_dd;

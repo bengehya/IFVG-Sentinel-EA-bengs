@@ -13,8 +13,12 @@ public:
    {
       int failed = 0;
       int passed = 0;
-      if(MathAbs(CMMSafety::ClampLotHardCap(0.05) - 0.01) > 1e-12)
-      { log.Error("SELFTEST lot cap"); failed++; }
+      if(MathAbs(CMMSafety::AllowedRiskMoney(50.0, 2.0) - 1.0) > 1e-12 ||
+         MathAbs(CMMSafety::AllowedRiskMoney(200.0, 2.0) - 4.0) > 1e-12 ||
+         MathAbs(CMMSafety::AllowedRiskMoney(1000.0, 2.0) - 20.0) > 1e-12 ||
+         MathAbs(CMMSafety::AllowedRiskMoney(5000.0, 2.0) - 100.0) > 1e-12 ||
+         MathAbs(CMMSafety::AllowedRiskMoney(980.0, 2.0) - 19.60) > 1e-12)
+      { log.Error("SELFTEST risk percent"); failed++; }
       else passed++;
 
       if(CMMSafety::CanOpenNewPosition(2, 2))
@@ -27,10 +31,43 @@ public:
       { log.Error("SELFTEST cooldown"); failed++; }
       else passed++;
 
-      if(!CMMSafety::CapitalTargetReached(50.0, 5.0, 250.0, 250.0) ||
-         CMMSafety::CapitalTargetReached(50.0, 5.0, 249.0, 249.0))
-      { log.Error("SELFTEST 5x capital"); failed++; }
+      SMMSymbolSpec spec;
+      MM_ResetSpec(spec);
+      spec.valid = true;
+      spec.tick_size = 0.01;
+      spec.tick_value = 1.0;
+      spec.volume_min = 0.01;
+      spec.volume_step = 0.01;
+      spec.volume_max = 5.0;
+      double theo = 0.0, actual = 0.0;
+      string rej = "";
+      const double lot_big = CMMSafety::LotFromAllowedRisk(spec, 5.0, 100.0, 0.0, theo, actual, rej);
+      if(lot_big <= 0.01 + 1e-12 || lot_big > spec.volume_max + 1e-12 || rej != "")
+      { log.Error("SELFTEST lot may exceed 0.01"); failed++; }
       else passed++;
+
+      const double lot_small_sl = CMMSafety::LotFromAllowedRisk(spec, 5.0, 20.0, 0.0, theo, actual, rej);
+      const double lot_large_sl = CMMSafety::LotFromAllowedRisk(spec, 20.0, 20.0, 0.0, theo, actual, rej);
+      if(MathAbs(lot_small_sl - 0.04) > 1e-12 || MathAbs(lot_large_sl - 0.01) > 1e-12)
+      { log.Error("SELFTEST lot scales with SL distance"); failed++; }
+      else passed++;
+
+      const double lot_min = CMMSafety::LotFromAllowedRisk(spec, 18.0, 10.0, 0.0, theo, actual, rej);
+      if(lot_min > 0.0 || StringFind(rej, "minimum lot exceeds") < 0)
+      { log.Error("SELFTEST min lot exceeds risk"); failed++; }
+      else passed++;
+
+      const double lot_step = CMMSafety::LotFromAllowedRisk(spec, 10.0, 37.0, 0.0, theo, actual, rej);
+      if(MathAbs(lot_step - 0.03) > 1e-12 || rej != "")
+      { log.Error("SELFTEST volume step"); failed++; }
+      else passed++;
+
+      spec.volume_max = 0.10;
+      const double lot_cap = CMMSafety::LotFromAllowedRisk(spec, 1.0, 50.0, 0.0, theo, actual, rej);
+      if(MathAbs(lot_cap - 0.10) > 1e-12 || rej != "")
+      { log.Error("SELFTEST volume max"); failed++; }
+      else passed++;
+      spec.volume_max = 5.0;
 
       SMMFib fib;
       CMMFibonacciEngine::Build(MM_DIR_BUY, 2000.0, 1000.0, fib);

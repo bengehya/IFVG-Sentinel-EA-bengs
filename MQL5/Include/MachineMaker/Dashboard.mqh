@@ -4,7 +4,6 @@
 #include "StateMachine.mqh"
 #include "CooldownManager.mqh"
 #include "PositionManager.mqh"
-#include "CapitalGuard.mqh"
 
 class CMMDashboard
 {
@@ -45,7 +44,7 @@ public:
    void Destroy() { ObjectsDeleteAll(0, m_prefix); }
 
    void Render(const string symbol, const CMMStateMachine &sm, const CMMCooldownManager &cd,
-               const CMMPositionManager &pos, const CMMCapitalGuard &cap, const CMMConfig &cfg)
+               const CMMPositionManager &pos, const CMMConfig &cfg)
    {
       if(!m_enabled)
          return;
@@ -55,8 +54,10 @@ public:
          stclr = clrGold;
       if(s.state == MM_ST_POSITION_ACTIVE)
          stclr = clrLime;
-      if(s.state == MM_ST_COOLDOWN || s.state == MM_ST_WITHDRAWAL_REQUIRED)
+      if(s.state == MM_ST_COOLDOWN)
          stclr = clrOrangeRed;
+      const double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      const double allowed = cfg.AllowedRiskMoney(equity);
       Label("T", 0, "MACHINE MAKER", C'201,162,39', 11);
       Label("S", 1, "Status: " + MM_StateToString(s.state), stclr, 10);
       Label("SY", 2, "Symbol: " + symbol + "  [GOLD-ONLY]", clrWhite);
@@ -66,8 +67,9 @@ public:
       Label("P", 6, "POSITIONS: " + IntegerToString(pos.CountOpen()) + " / " + IntegerToString(cfg.in.max_positions), clrAqua);
       Label("RR", 7, "TARGET RR: 1:" + DoubleToString(cfg.in.target_rr, 1), clrAqua);
       Label("CD", 8, "Cooldown: " + cd.RemainingLabel(TimeCurrent()), cd.Active(TimeCurrent()) ? clrOrangeRed : clrSilver);
-      Label("CAP", 9, "Capital: " + DoubleToString(cap.StartingCapital(), 0) + " -> " + DoubleToString(cap.Target(), 0) +
-            (cap.Locked() ? " LOCKED" : ""), cap.Locked() ? clrOrangeRed : clrLime);
+      Label("RSK", 9, "Risk: " + DoubleToString(cfg.in.risk_percent, 1) + "% of " +
+            DoubleToString(equity, 2) + " = " + DoubleToString(allowed, 2) + " " +
+            AccountInfoString(ACCOUNT_CURRENCY), clrLime);
       Label("RJ", 10, "Last: " + (s.last_reject == "" ? "-" : s.last_reject), clrGray);
       ChartRedraw(0);
    }

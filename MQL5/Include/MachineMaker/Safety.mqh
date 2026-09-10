@@ -8,18 +8,23 @@
 class CMMSafety
 {
 public:
-   static double ClampLotHardCap(const double requested_lot)
+   static double EffectiveMaxVolume(const SMMSymbolSpec &spec, const double input_max_lot)
    {
-      if(requested_lot <= 0.0)
+      if(!spec.valid || spec.volume_max <= 0.0)
          return 0.0;
-      return MathMin(requested_lot, MM_HARD_MAX_LOT);
+      if(input_max_lot > 0.0)
+         return MathMin(input_max_lot, spec.volume_max);
+      return spec.volume_max;
    }
 
-   static double ClampLotInput(const double input_max_lot)
+   static double ClampToBrokerVolume(const SMMSymbolSpec &spec, const double lot, const double input_max_lot)
    {
-      if(input_max_lot <= 0.0)
-         return MM_HARD_MAX_LOT;
-      return MathMin(input_max_lot, MM_HARD_MAX_LOT);
+      if(lot <= 0.0)
+         return 0.0;
+      const double cap = EffectiveMaxVolume(spec, input_max_lot);
+      if(cap <= 0.0)
+         return 0.0;
+      return MathMin(lot, cap);
    }
 
    static int ClampMaxPositions(const int input_max_positions)
@@ -81,18 +86,27 @@ public:
       return (consecutive_losses >= ClampConsecSL(limit));
    }
 
-   static bool VolumeRespectsHardCap(const double lot)
+   static bool VolumeRespectsBroker(const SMMSymbolSpec &spec, const double lot, const double input_max_lot)
    {
-      if(lot <= 0.0)
+      if(lot <= 0.0 || !spec.valid)
          return false;
-      return (lot <= MM_HARD_MAX_LOT + 1e-12);
+      if(lot + 1e-12 < spec.volume_min)
+         return false;
+      const double cap = EffectiveMaxVolume(spec, input_max_lot);
+      if(cap <= 0.0)
+         return false;
+      return (lot <= cap + 1e-12);
    }
 
-   static bool BrokerAllowsHardCap(const SMMSymbolSpec &spec)
+   static bool BrokerVolumeUsable(const SMMSymbolSpec &spec)
    {
       if(!spec.valid)
          return false;
-      if(spec.volume_min - MM_HARD_MAX_LOT > 1e-12)
+      if(spec.volume_min <= 0.0 || spec.volume_max <= 0.0)
+         return false;
+      if(spec.volume_min - spec.volume_max > 1e-12)
+         return false;
+      if(spec.tick_size <= 0.0 || spec.tick_value <= 0.0)
          return false;
       return true;
    }
@@ -134,18 +148,11 @@ public:
       return profit / risk_money;
    }
 
-   static double AllowedRiskMoney(const bool use_percent, const double risk_money,
-                                  const double risk_percent, const double balance)
+   static double AllowedRiskMoney(const double equity, const double risk_percent)
    {
-      if(use_percent)
-      {
-         if(balance <= 0.0 || risk_percent <= 0.0)
-            return 0.0;
-         return balance * risk_percent / 100.0;
-      }
-      if(risk_money <= 0.0)
-         return MM_DEFAULT_RISK_MONEY;
-      return risk_money;
+      if(equity <= 0.0 || risk_percent <= 0.0)
+         return 0.0;
+      return equity * risk_percent / 100.0;
    }
 
    static double TheoreticalLotFromRisk(const SMMSymbolSpec &spec, const double risk_distance, const double allowed_risk)
@@ -163,6 +170,7 @@ public:
    static double LotFromAllowedRisk(const SMMSymbolSpec &spec,
                                     const double risk_distance,
                                     const double allowed_risk,
+                                    const double input_max_lot,
                                     double &theoretical_lot,
                                     double &actual_risk,
                                     string &reject)
@@ -170,9 +178,9 @@ public:
       reject = "";
       theoretical_lot = 0.0;
       actual_risk = 0.0;
-      if(!BrokerAllowsHardCap(spec))
+      if(!BrokerVolumeUsable(spec))
       {
-         reject = "broker volume_min exceeds hard cap 0.01";
+         reject = "broker volume spec unusable";
          return 0.0;
       }
       theoretical_lot = TheoreticalLotFromRisk(spec, risk_distance, allowed_risk);
@@ -183,7 +191,7 @@ public:
       }
       const double min_lot_risk = RiskMoneyFromDistance(spec, risk_distance, spec.volume_min);
       double lot = theoretical_lot;
-      lot = MathMin(lot, MM_HARD_MAX_LOT);
+      lot = ClampToBrokerVolume(spec, lot, input_max_lot);
       if(lot + 1e-12 < spec.volume_min)
       {
          if(min_lot_risk > allowed_risk + 1e-8)
@@ -195,7 +203,7 @@ public:
          lot = spec.volume_min;
       }
       lot = MM_NormalizeVolume(spec, lot);
-      lot = ClampLotHardCap(lot);
+      lot = ClampToBrokerVolume(spec, lot, input_max_lot);
       if(lot + 1e-12 < spec.volume_min)
       {
          if(min_lot_risk > allowed_risk + 1e-8)
@@ -213,21 +221,12 @@ public:
          reject = "minimum lot exceeds risk limit";
          return 0.0;
       }
-      if(!VolumeRespectsHardCap(lot))
+      if(!VolumeRespectsBroker(spec, lot, input_max_lot))
       {
-         reject = "lot exceeds hard cap 0.01";
+         reject = "lot exceeds broker volume max";
          return 0.0;
       }
       return lot;
-   }
-
-   static bool CapitalTargetReached(const double start, const double multiple,
-                                    const double balance, const double equity)
-   {
-      if(start <= 0.0 || multiple <= 0.0)
-         return false;
-      const double target = start * multiple;
-      return (balance + 1e-8 >= target) || (equity + 1e-8 >= target);
    }
 };
 

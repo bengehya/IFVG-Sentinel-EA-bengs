@@ -54,17 +54,32 @@ Touch without the required close is not an entry.
 Raw SL = just beyond the FVG by `InpSLBufferPoints` (default 50).
 
 - If FVG SL is **tighter** than 0.62 SL → use 0.62 (small-FVG structural protection).
-- If 0.01 lot at FVG SL **exceeds** `InpRiskMoney` and 0.62 is closer → use 0.62 (large-FVG monetary protection).
+- If broker `volume_min` at FVG SL **exceeds** allowed risk money and 0.62 is closer → use 0.62 (large-FVG monetary protection).
 - Otherwise use the FVG SL.
 
-SL is never moved to manufacture RR. If 1:4 cannot be built from the chosen SL: NO TRADE.
+SL is never moved to manufacture RR or to fit a lot size. If 1:4 cannot be built from the chosen SL: NO TRADE.
 
 ## Risk / margin / capital
 
-- Default `InpRiskMoney = 10`, `InpUseRiskPercent = false`.
-- Lot from real SL distance. Cap 0.01. Do not bump min lot above allowed risk.
-- Margin is **not** a strategy gate. Broker `NO_MONEY` is logged and not retried with a larger lot.
-- Starting capital persisted. 5× lock persisted. Restart does not unlock. `InpResetCapitalLock=true` on init only.
+Risk is a percent of **live equity**, recomputed before every new entry:
+
+`AllowedRisk = ACCOUNT_EQUITY × InpRiskPercent / 100` (default 2%).
+
+Architecture:
+
+```
+ACCOUNT_EQUITY → RiskPercent → AllowedRiskMoney
+→ structural SL (unchanged) → Entry/SL distance
+→ theoretical lot → broker volume min/max/step
+→ OrderCheck / margin → order or NO TRADE
+```
+
+- Default `InpRiskPercent = 2.0`. `InpMaxLot = 0` means no EA cap (broker `SYMBOL_VOLUME_MAX` only).
+- Lot from real SL distance, tick size/value, and broker volume constraints. No strategic 0.01 hard cap.
+- If `volume_min` at the structural SL would lose more than AllowedRisk: **NO TRADE**. Do not shrink SL. Do not raise risk.
+- Margin is **not** a strategy gate. `OrderCheck` / `TRADE_RETCODE_NO_MONEY` logs `insufficient margin` and is not retried with a larger lot or a tighter SL.
+- Account currency comes from `ACCOUNT_CURRENCY`. Tick value comes from the symbol. No hardcoded USD↔USC conversion.
+- No starting-capital lock. No `$50 → $250 → WITHDRAWAL_REQUIRED`. Restart does not require a capital reset.
 
 ## Timeframes
 
