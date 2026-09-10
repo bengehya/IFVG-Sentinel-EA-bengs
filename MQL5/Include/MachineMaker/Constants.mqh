@@ -25,6 +25,7 @@
 #define MM_GV_CONSEC_SL              "CONSEC_SL"
 #define MM_GV_COOLDOWN_START         "CD_START"
 #define MM_GV_COOLDOWN_END           "CD_END"
+#define MM_GV_RISK_POS               "RISK_"
 
 #define MM_DASH_PREFIX               "MM_DASH_"
 

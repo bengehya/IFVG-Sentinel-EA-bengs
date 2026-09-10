@@ -111,10 +111,29 @@ int MM_PeriodSeconds(const ENUM_TIMEFRAMES tf)
 bool MM_CopyRatesSafe(const string symbol, const ENUM_TIMEFRAMES tf, const int count, MqlRates &rates[])
 {
    if(tf == PERIOD_CURRENT)
+   {
+      ArrayResize(rates, 0);
       return false;
+   }
    ArraySetAsSeries(rates, true);
    const int got = CopyRates(symbol, tf, 0, count, rates);
-   return (got >= count || got > 10);
+   if(got < count)
+   {
+      ArrayResize(rates, 0);
+      static string last_fp = "";
+      const string fp = symbol + "|" + IntegerToString((int)tf) + "|" +
+                         IntegerToString(count) + "|" + IntegerToString(got);
+      if(fp != last_fp)
+      {
+         last_fp = fp;
+         Print(MM_LOG_PREFIX, "insufficient history symbol=", symbol,
+               " tf=", IntegerToString((int)tf),
+               " need=", IntegerToString(count),
+               " got=", IntegerToString(got));
+      }
+      return false;
+   }
+   return true;
 }
 
 bool MM_CopyTimeSafe(const string symbol, const ENUM_TIMEFRAMES tf, datetime &times[])

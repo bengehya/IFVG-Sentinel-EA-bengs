@@ -109,6 +109,12 @@ public:
       { log.Error("SELFTEST RR 1:3 rejected"); failed++; }
       else passed++;
 
+      if(MathAbs(CMMSafety::RealizedR(40.0, 10.0) - 4.0) > 1e-12 ||
+         MathAbs(CMMSafety::RealizedR(-10.0, 10.0) + 1.0) > 1e-12 ||
+         MathAbs(CMMSafety::RealizedR(-8.0, 10.0) + 0.8) > 1e-12)
+      { log.Error("SELFTEST realized R"); failed++; }
+      else passed++;
+
       log.Info("Safety self-test: passed=" + IntegerToString(passed) + " failed=" + IntegerToString(failed));
       return failed;
    }

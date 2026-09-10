@@ -149,17 +149,35 @@ struct SMMSetup
    string               last_wait_fp;
 };
 
+struct SMMOpenTrade
+{
+   ulong                position_id;
+   double               entry;
+   double               sl;
+   double               risk_distance;
+   double               risk_money;
+   double               volume;
+   ENUM_MM_DIR          direction;
+   ENUM_MM_ENTRY_MODEL  model;
+   ulong                fvg_id;
+};
+
 struct SMMStats
 {
-   int    trades;
-   int    wins;
-   int    losses;
+   int    fvgs_detected;
+   int    fvgs_invalidated;
+   int    fvgs_expired;
+   int    fvgs_traded;
    int    setups_valid;
    int    setups_rejected;
-   int    fvgs_seen;
-   int    fvgs_invalidated;
-   int    model1;
-   int    model2;
+   int    order_attempts;
+   int    orders_rejected;
+   int    trades_executed;
+   int    trades_closed;
+   int    wins;
+   int    losses;
+   int    model1_executed;
+   int    model2_executed;
    double gross_profit;
    double gross_loss;
    double max_dd;

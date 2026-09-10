@@ -97,33 +97,6 @@ void LoadInputs()
    g_cfg.ApplySafetyClamps();
 }
 
-double ClosedTradeRiskDistance(const ulong deal, const bool closed_by_sl)
-{
-   const double close_px = HistoryDealGetDouble(deal, DEAL_PRICE);
-   const ulong pos_id = (ulong)HistoryDealGetInteger(deal, DEAL_POSITION_ID);
-   double sl = 0.0;
-   if(HistorySelectByPosition(pos_id))
-   {
-      const int n = HistoryDealsTotal();
-      for(int i = 0; i < n; i++)
-      {
-         const ulong d = HistoryDealGetTicket(i);
-         if(d == 0)
-            continue;
-         if(HistoryDealGetInteger(d, DEAL_ENTRY) == DEAL_ENTRY_IN)
-         {
-            const double entry = HistoryDealGetDouble(d, DEAL_PRICE);
-            if(closed_by_sl)
-               return MathAbs(entry - close_px);
-            if(PositionSelectByTicket(pos_id))
-               sl = PositionGetDouble(POSITION_SL);
-            return MathAbs(entry - (sl > 0.0 ? sl : close_px));
-         }
-      }
-   }
-   return 0.0;
-}
-
 int OnInit()
 {
    LoadInputs();
@@ -164,6 +137,12 @@ int OnInit()
    }
 
    g_store.Init(g_cfg.in.magic, symbol);
+   if(MQLInfoInteger(MQL_TESTER))
+   {
+      const int n = g_store.ResetTesterState();
+      g_log.Info("TESTER-ONLY reset of persisted cooldown (CONSEC_SL, CD_START, CD_END) and RISK_* keys; removed=" +
+                 IntegerToString(n));
+   }
    g_dir.Init(&g_cfg, &g_log);
    g_fvg.Init(&g_cfg, &g_log);
    g_fvg.SetSpec(g_sym.Spec());
@@ -171,7 +150,7 @@ int OnInit()
    g_risk.Init(&g_cfg, &g_log);
    g_pos.Init(&g_cfg, symbol);
    g_trade.Init(&g_cfg, &g_log);
-   g_stats.Init(&g_log, g_cfg.in.target_rr);
+   g_stats.Init(&g_log, g_cfg.in.target_rr, &g_store);
    g_sm.Bind(&g_cfg, &g_log, &g_dir, &g_fvg, &g_risk, &g_trade, &g_pos, &g_cd, &g_stats, &g_sym);
    g_dash.Init(g_cfg.in.enable_dashboard && !MQLInfoInteger(MQL_TESTER));
    EventSetTimer(1);
@@ -219,11 +198,12 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
                          HistoryDealGetDouble(deal, DEAL_COMMISSION);
    const long reason = HistoryDealGetInteger(deal, DEAL_REASON);
    const bool closed_by_sl = (reason == DEAL_REASON_SL);
-   const bool is_loss = (profit < 0.0) || closed_by_sl;
-   const double volume = HistoryDealGetDouble(deal, DEAL_VOLUME);
-   const double risk_distance = ClosedTradeRiskDistance(deal, closed_by_sl);
-   const double risk_money = CMMSafety::RiskMoneyFromDistance(g_sym.Spec(), risk_distance, volume);
+   const bool is_loss = (profit < 0.0);
+   const ulong pos_id = (ulong)HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+   double risk_money = 0.0;
+   g_stats.RecallRiskMoney(pos_id, risk_money);
    g_stats.OnClosedDeal(profit, risk_money, is_loss);
+   g_stats.ForgetOpen(pos_id);
    if(closed_by_sl)
       g_cd.OnClosedTrade(true, TimeCurrent());
    else if(profit > 0.0)

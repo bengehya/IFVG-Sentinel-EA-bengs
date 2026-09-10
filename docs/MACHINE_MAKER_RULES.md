@@ -90,3 +90,10 @@ ACCOUNT_EQUITY → RiskPercent → AllowedRiskMoney
 ## Timeframes
 
 Always D1 / H4 / M15. Chart/tester period is ignored. `PERIOD_CURRENT` is rejected.
+
+## Backtest integrity (not strategy)
+
+- Strategy Tester `OnInit` resets this EA's Global Variables (`CONSEC_SL`, `CD_START`, `CD_END`, `RISK_*`) so two tests start clean. Live trading never resets them; 2 SL → 8h cooldown still persists.
+- `CopyRates` requires the requested bar count. Short history logs `insufficient history` and skips; it does not invent bars.
+- Journal R uses risk money stored at fill (entry, initial SL, volume). It does not read SL from a position that already closed.
+- Report splits detected FVGs, valid setups, order attempts, rejected orders, executed trades, and closed trades. A rejected `OrderCheck` is not an executed trade.

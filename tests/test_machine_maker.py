@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -34,6 +35,7 @@ from machine_maker import (
     choose_sl,
     completely_broken,
     cooldown_end,
+    copy_rates_ok,
     detect_entry,
     fvg_on_correct_side,
     is_cooldown_active,
@@ -44,11 +46,15 @@ from machine_maker import (
     model1,
     model2,
     process_wait_ticks,
+    r_from_open_ledger,
+    reset_persisted_state,
+    realized_r,
     reward_meets_target,
     theoretical_lot,
     three_candle_bearish,
     three_candle_bullish,
     tp_from_rr,
+    Accounting,
 )
 
 
@@ -240,6 +246,37 @@ def run() -> int:
     wait = {"state": ST_WAITING_RETEST, "m15_checks": 0, "entry_logs": []}
     process_wait_ticks(wait, 60, new_m15_every=0)
     check("K/wait no per-tick M15 revalidation", wait["m15_checks"] == 0)
+
+    # L. Backtest accounting / tester state (reporting only)
+    types_src = (mm_root / "MQL5" / "Include" / "MachineMaker" / "Types.mqh").read_text(encoding="utf-8")
+    stats_body = types_src.split("struct SMMStats", 1)[1].split("};", 1)[0]
+    stats_fields = re.findall(r"\b(?:int|double)\s+(\w+)\s*;", stats_body)
+    check("L SMMStats unique fields", len(stats_fields) == len(set(stats_fields)) and "trades" not in stats_fields)
+    live = {"CONSEC_SL": 2, "CD_END": 99}
+    check("L live persist keeps cooldown", reset_persisted_state(live, False) == live)
+    check("L tester reset wipes store", reset_persisted_state(live, True) == {})
+    check("L insufficient history rejected", not copy_rates_ok(11, 81))
+    check("L full history accepted", copy_rates_ok(81, 81))
+    check("L BUY TP R = +4", abs(r_from_open_ledger(100.0, 90.0, 0.01, 40.0) - 4.0) < 1e-12)
+    check("L BUY SL R = -1", abs(r_from_open_ledger(100.0, 90.0, 0.01, -10.0) + 1.0) < 1e-12)
+    check("L SELL TP R = +4", abs(r_from_open_ledger(100.0, 110.0, 0.01, 40.0) - 4.0) < 1e-12)
+    check("L SELL SL R = -1", abs(r_from_open_ledger(100.0, 110.0, 0.01, -10.0) + 1.0) < 1e-12)
+    acc = Accounting()
+    acc.plan_ok_open_fail()
+    check("L valid setup ≠ executed", acc.setups_valid == 1 and acc.trades_executed == 0)
+    check("L attempt ≠ executed", acc.order_attempts == 1 and acc.trades_executed == 0)
+    check("L rejected ≠ trade", acc.orders_rejected == 1 and acc.trades_executed == 0)
+    acc2 = Accounting()
+    acc2.plan_ok_open_ok(MODEL_WICK, 7, 10.0)
+    check("L executed after fill only", acc2.trades_executed == 1 and acc2.model1_executed == 1)
+    check("L closed uses open risk", abs(acc2.close(7) - 10.0) < 1e-12 and acc2.trades_closed == 1)
+    acc3 = Accounting()
+    acc3.on_new_fvg()
+    acc3.on_life(True, "invalidated")
+    acc3.on_life(False, "invalidated")
+    check("L FVG invalid counted once", acc3.fvgs_detected == 1 and acc3.fvgs_invalidated == 1)
+    acc3.on_life(True, "expired")
+    check("L FVG expired distinct", acc3.fvgs_expired == 1)
 
     print(f"\npassed={passed} failed={failed}")
     return failed
