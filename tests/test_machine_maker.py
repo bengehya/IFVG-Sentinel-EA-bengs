@@ -15,6 +15,7 @@ from machine_maker import (
     DEFAULT_RISK_PERCENT,
     DIR_BUY,
     DIR_SELL,
+    FIB_METHOD,
     HARD_TARGET_RR,
     MODEL_MID,
     MODEL_NONE,
@@ -37,6 +38,7 @@ from machine_maker import (
     fvg_on_correct_side,
     is_cooldown_active,
     is_gold_symbol,
+    last_high_last_low,
     lock_strategy_timeframes,
     lot_from_allowed_risk,
     model1,
@@ -71,15 +73,44 @@ def run() -> int:
     check("A gold-only XAUUSD", is_gold_symbol("XAUUSD"))
     check("A gold-only rejects EURUSD", not is_gold_symbol("EURUSD"))
 
-    # B. Fibonacci
+    # B. Fibonacci — 50/62 convention unchanged; anchors are last high / last low.
     fb = build_fib(DIR_BUY, 2000.0, 1000.0)
     check("B bull 50% midpoint", abs(fb["fib_50"] - 1500.0) < 1e-9)
     check("B bull 62% retrace from high", abs(fb["fib_62"] - 1380.0) < 1e-9)
     fe = build_fib(DIR_SELL, 2000.0, 1000.0)
     check("B bear 50% midpoint", abs(fe["fib_50"] - 1500.0) < 1e-9)
     check("B bear 62% retrace from low", abs(fe["fib_62"] - 1620.0) < 1e-9)
-    check("B bull 0.00 is swing high", abs(fb["fib_00"] - 2000.0) < 1e-9)
-    check("B bear 0.00 is swing low", abs(fe["fib_00"] - 1000.0) < 1e-9)
+    check("B bull 0.00 is last high", abs(fb["fib_00"] - 2000.0) < 1e-9)
+    check("B bear 0.00 is last low", abs(fe["fib_00"] - 1000.0) < 1e-9)
+    check("B method is LAST_HIGH_LAST_LOW", fb["method"] == FIB_METHOD)
+
+    forming_ignored = last_high_last_low(
+        [{"high": 1.0, "low": 0.5}, {"high": 12.0, "low": 8.0}, {"high": 11.0, "low": 7.0}, {"high": 10.0, "low": 9.0}]
+    )
+    check("B last high from closed window", forming_ignored == (12.0, 7.0))
+    check("B last low from closed window", forming_ignored is not None and forming_ignored[1] == 7.0)
+
+    high_then_low = last_high_last_low(
+        [{"high": 1.0, "low": 0.5}, {"high": 11.0, "low": 5.0}, {"high": 20.0, "low": 8.0}]
+    )
+    low_then_high = last_high_last_low(
+        [{"high": 1.0, "low": 0.5}, {"high": 20.0, "low": 15.0}, {"high": 11.0, "low": 5.0}]
+    )
+    check(
+        "B chronological inversion yields same extremes",
+        high_then_low == (20.0, 5.0) and low_then_high == (20.0, 5.0),
+    )
+    fib_inv_buy = build_fib(DIR_BUY, *high_then_low)
+    fib_inv_sell = build_fib(DIR_SELL, *low_then_high)
+    check("B inverted BUY 50%", abs(fib_inv_buy["fib_50"] - 12.5) < 1e-9)
+    check("B inverted BUY 62%", abs(fib_inv_buy["fib_62"] - (20.0 - 0.62 * 15.0)) < 1e-9)
+    check("B inverted SELL 50%", abs(fib_inv_sell["fib_50"] - 12.5) < 1e-9)
+    check("B inverted SELL 62%", abs(fib_inv_sell["fib_62"] - (5.0 + 0.62 * 15.0)) < 1e-9)
+
+    check("B no bars → unavailable", last_high_last_low([]) is None)
+    check("B forming-only bar → unavailable", last_high_last_low([{"high": 10.0, "low": 9.0}]) is None)
+    check("B high==low → unavailable", last_high_last_low([{"high": 1.0, "low": 0.5}, {"high": 5.0, "low": 5.0}]) is None)
+    check("B DIR_NONE rejected", build_fib(0, 2000.0, 1000.0) is None)
 
     # C. FVG
     bull = three_candle_bullish(100.0, 101.0, 0.5)

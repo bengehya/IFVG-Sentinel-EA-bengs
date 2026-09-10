@@ -111,8 +111,8 @@ public:
       if(m_log != NULL)
       {
          m_log.Sl("FVG size=" + DoubleToString(fvg.high - fvg.low, spec.digits));
-         m_log.Sl("SwingHigh=" + DoubleToString(fib.swing_high, spec.digits));
-         m_log.Sl("SwingLow=" + DoubleToString(fib.swing_low, spec.digits));
+         m_log.Sl("LastHigh=" + DoubleToString(fib.swing_high, spec.digits));
+         m_log.Sl("LastLow=" + DoubleToString(fib.swing_low, spec.digits));
          m_log.Sl("0.50=" + DoubleToString(fib.fib_50, spec.digits));
          m_log.Sl("0.62=" + DoubleToString(fib.fib_62, spec.digits));
          m_log.Sl("raw SL=" + DoubleToString(plan.raw_sl, spec.digits));

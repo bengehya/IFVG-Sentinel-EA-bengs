@@ -48,22 +48,49 @@ def align_bias(daily: int, h4: int) -> int:
     return BIAS_NEUTRAL
 
 
-def build_fib(direction: int, swing_high: float, swing_low: float) -> dict | None:
-    if swing_high <= swing_low or direction == DIR_NONE:
+FIB_METHOD = "LAST_HIGH_LAST_LOW"
+
+
+def last_high_last_low(bars: list[dict], skip_forming: bool = True) -> tuple[float, float] | None:
+    """Newest-first series. Skip bar 0 (forming) when a closed bar exists.
+
+    LastHigh = max high in the closed window. LastLow = min low.
+    Chronological order of those two bars does not matter.
+    """
+    if not bars:
         return None
-    rng = swing_high - swing_low
-    fib50 = swing_low + 0.50 * rng
-    if direction == DIR_BUY:
-        fib62 = swing_high - 0.62 * rng
-        fib00, fib100 = swing_high, swing_low
+    if skip_forming:
+        if len(bars) < 2:
+            return None
+        window = bars[1:]
     else:
-        fib62 = swing_low + 0.62 * rng
-        fib00, fib100 = swing_low, swing_high
+        window = bars
+    if not window:
+        return None
+    last_high = max(b["high"] for b in window)
+    last_low = min(b["low"] for b in window)
+    if last_high <= last_low:
+        return None
+    return last_high, last_low
+
+
+def build_fib(direction: int, last_high: float, last_low: float) -> dict | None:
+    if last_high <= last_low or direction == DIR_NONE:
+        return None
+    rng = last_high - last_low
+    fib50 = last_low + 0.50 * rng
+    if direction == DIR_BUY:
+        fib62 = last_high - 0.62 * rng
+        fib00, fib100 = last_high, last_low
+    else:
+        fib62 = last_low + 0.62 * rng
+        fib00, fib100 = last_low, last_high
     return {
         "valid": True,
         "direction": direction,
-        "swing_high": swing_high,
-        "swing_low": swing_low,
+        "method": FIB_METHOD,
+        "swing_high": last_high,
+        "swing_low": last_low,
         "fib_00": fib00,
         "fib_50": fib50,
         "fib_62": fib62,

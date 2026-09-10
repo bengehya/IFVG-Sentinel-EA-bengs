@@ -2,7 +2,8 @@
 #define MM_CONSTANTS_MQH
 
 #define MM_EA_NAME                   "MACHINE MAKER"
-#define MM_EA_VERSION                "1.1.0"
+#define MM_EA_VERSION                "1.2.0"
+#define MM_FIB_METHOD                "LAST_HIGH_LAST_LOW"
 #define MM_LOG_PREFIX                "[MACHINE MAKER] "
 
 #define MM_MAGIC                     26091001

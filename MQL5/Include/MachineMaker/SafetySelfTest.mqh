@@ -75,6 +75,32 @@ public:
       { log.Error("SELFTEST fib bull"); failed++; }
       else passed++;
 
+      MqlRates bars[];
+      ArrayResize(bars, 4);
+      ArraySetAsSeries(bars, true);
+      bars[0].high = 1.0;  bars[0].low = 0.5;
+      bars[1].high = 12.0; bars[1].low = 8.0;
+      bars[2].high = 11.0; bars[2].low = 7.0;
+      bars[3].high = 10.0; bars[3].low = 9.0;
+      double last_high = 0.0, last_low = 0.0;
+      if(!CMMFibonacciEngine::LastHighLastLowFromRates(bars, last_high, last_low) ||
+         MathAbs(last_high - 12.0) > 1e-12 || MathAbs(last_low - 7.0) > 1e-12)
+      { log.Error("SELFTEST last high/low"); failed++; }
+      else passed++;
+
+      bars[1].high = 11.0; bars[1].low = 5.0;
+      bars[2].high = 20.0; bars[2].low = 8.0;
+      double inv_high = 0.0, inv_low = 0.0;
+      if(!CMMFibonacciEngine::LastHighLastLowFromRates(bars, inv_high, inv_low) ||
+         MathAbs(inv_high - 20.0) > 1e-12 || MathAbs(inv_low - 5.0) > 1e-12)
+      { log.Error("SELFTEST last high/low inverted time"); failed++; }
+      else passed++;
+
+      MqlRates empty[];
+      if(CMMFibonacciEngine::LastHighLastLowFromRates(empty, last_high, last_low))
+      { log.Error("SELFTEST last high/low empty"); failed++; }
+      else passed++;
+
       double rr = 0.0;
       if(!CMMSafety::RewardMeetsTarget(100, 90, 140, 4.0, rr) || MathAbs(rr - 4.0) > 1e-9)
       { log.Error("SELFTEST RR 1:4"); failed++; }
