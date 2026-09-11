@@ -5,16 +5,97 @@
 #include "Logger.mqh"
 #include "FibonacciEngine.mqh"
 #include "Utils.mqh"
+#include "BacktestStats.mqh"
 
 class CMMFVGEngine
 {
 private:
-   CMMConfig    *m_cfg;
-   CMMLogger    *m_log;
-   SMMSymbolSpec m_spec;
-   SMMFVG        m_fvgs[MM_MAX_FVG];
-   int           m_count;
-   ulong         m_next_id;
+   CMMConfig         *m_cfg;
+   CMMLogger         *m_log;
+   CMMBacktestStats  *m_stats;
+   SMMSymbolSpec      m_spec;
+   SMMFVG             m_fvgs[MM_MAX_FVG];
+   int                m_count;
+   ulong              m_next_id;
+
+   int PriceDigits() const { return (m_spec.digits > 0 ? m_spec.digits : 5); }
+
+   int AgeBars(const datetime ts, const datetime now) const
+   {
+      const int step = MM_PeriodSeconds(MM_TF_M15);
+      if(step <= 0 || now <= ts)
+         return 0;
+      return (int)((now - ts) / step);
+   }
+
+   void LogDetected(const SMMFVG &f, const double fib50)
+   {
+      if(m_log == NULL)
+         return;
+      const int d = PriceDigits();
+      m_log.Fvg("[DETECTED]");
+      m_log.Fvg("ID=" + IntegerToString((long)f.id));
+      m_log.Fvg("Direction=" + MM_DirToString(f.direction));
+      m_log.Fvg("High=" + DoubleToString(f.high, d));
+      m_log.Fvg("Low=" + DoubleToString(f.low, d));
+      m_log.Fvg("Mid=" + DoubleToString(f.mid, d));
+      m_log.Fvg("Fib50=" + DoubleToString(fib50, d));
+      m_log.Fvg("CorrectSide=" + (f.in_discount_or_premium ? "YES" : "NO"));
+      m_log.Fvg("Timestamp=" + TimeToString(f.timestamp, TIME_DATE | TIME_SECONDS));
+      if(f.in_discount_or_premium)
+         return;
+      m_log.Fvg("[WRONG_SIDE]");
+      m_log.Fvg("ID=" + IntegerToString((long)f.id));
+      m_log.Fvg("Direction=" + MM_DirToString(f.direction));
+      m_log.Fvg("High=" + DoubleToString(f.high, d));
+      m_log.Fvg("Low=" + DoubleToString(f.low, d));
+      m_log.Fvg("Fib50=" + DoubleToString(fib50, d));
+   }
+
+   void AccountNewFvg(const SMMFVG &f, const double fib50)
+   {
+      if(m_stats != NULL)
+      {
+         m_stats.OnFvgDetected();
+         if(f.in_discount_or_premium)
+            m_stats.OnFvgCorrectSide();
+      }
+      LogDetected(f, fib50);
+   }
+
+   void ApplyLife(const int i, const ENUM_MM_FVG_LIFE life, const string reason)
+   {
+      if(i < 0 || i >= m_count)
+         return;
+      const ENUM_MM_FVG_LIFE old = m_fvgs[i].life;
+      m_fvgs[i].life = life;
+      if(old != MM_FVG_VALID)
+         return;
+      if(life == MM_FVG_INVALIDATED)
+      {
+         if(m_stats != NULL)
+            m_stats.OnFvgInvalidated();
+         if(m_log != NULL)
+         {
+            m_log.Fvg("[INVALIDATED]");
+            m_log.Fvg("ID=" + IntegerToString((long)m_fvgs[i].id));
+            m_log.Fvg("Direction=" + MM_DirToString(m_fvgs[i].direction));
+            m_log.Fvg("Reason=" + reason);
+         }
+      }
+      else if(life == MM_FVG_EXPIRED)
+      {
+         if(m_stats != NULL)
+            m_stats.OnFvgExpired();
+         if(m_log != NULL)
+         {
+            m_log.Fvg("[EXPIRED]");
+            m_log.Fvg("ID=" + IntegerToString((long)m_fvgs[i].id));
+            m_log.Fvg("Direction=" + MM_DirToString(m_fvgs[i].direction));
+            m_log.Fvg("AgeBars=" + IntegerToString(AgeBars(m_fvgs[i].timestamp, TimeCurrent())));
+         }
+      }
+   }
 
    bool Exists(const datetime t, const ENUM_MM_DIR dir) const
    {
@@ -38,7 +119,14 @@ private:
    }
 
 public:
-   CMMFVGEngine() { m_count = 0; m_next_id = 1; m_cfg = NULL; m_log = NULL; }
+   CMMFVGEngine()
+   {
+      m_count = 0;
+      m_next_id = 1;
+      m_cfg = NULL;
+      m_log = NULL;
+      m_stats = NULL;
+   }
 
    void Init(CMMConfig *cfg, CMMLogger *log)
    {
@@ -47,6 +135,7 @@ public:
       m_count = 0;
    }
 
+   void SetStats(CMMBacktestStats *stats) { m_stats = stats; }
    void SetSpec(const SMMSymbolSpec &spec) { m_spec = spec; }
    int Count() const { return m_count; }
    SMMFVG At(const int i) const { return m_fvgs[i]; }
@@ -96,7 +185,7 @@ public:
          if(m_fvgs[i].life != MM_FVG_VALID)
             continue;
          if(max_age > 0 && now - m_fvgs[i].timestamp > max_age)
-            m_fvgs[i].life = MM_FVG_EXPIRED;
+            ApplyLife(i, MM_FVG_EXPIRED, "max age");
       }
 
       // Closed candles only: start at index 1 (current unfinished bar skipped).
@@ -120,6 +209,7 @@ public:
                f.timestamp = rates[i].time;
                f.in_discount_or_premium = CMMFibonacciEngine::FvgOnCorrectSide(MM_DIR_BUY, fib, hi, lo);
                Push(f);
+               AccountNewFvg(f, fib.fib_50);
             }
          }
          if(dir == MM_DIR_SELL || dir == MM_DIR_NONE)
@@ -137,6 +227,7 @@ public:
                f.timestamp = rates[i].time;
                f.in_discount_or_premium = CMMFibonacciEngine::FvgOnCorrectSide(MM_DIR_SELL, fib, hi, lo);
                Push(f);
+               AccountNewFvg(f, fib.fib_50);
             }
          }
       }
@@ -150,7 +241,7 @@ public:
             if(rates[b].time <= m_fvgs[i].timestamp)
                continue;
             if(CompletelyBroken(m_fvgs[i].direction, m_fvgs[i].high, m_fvgs[i].low, rates[b].close))
-               m_fvgs[i].life = MM_FVG_INVALIDATED;
+               ApplyLife(i, MM_FVG_INVALIDATED, "full break through FVG");
          }
       }
    }
@@ -192,12 +283,15 @@ public:
       return false;
    }
 
-   void MarkLife(const ulong id, const ENUM_MM_FVG_LIFE life)
+   void MarkLife(const ulong id, const ENUM_MM_FVG_LIFE life, const string reason = "")
    {
       for(int i = 0; i < m_count; i++)
       {
          if(m_fvgs[i].id == id)
-            m_fvgs[i].life = life;
+         {
+            ApplyLife(i, life, (reason == "" ? "state-machine" : reason));
+            return;
+         }
       }
    }
 };

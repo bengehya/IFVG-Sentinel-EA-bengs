@@ -60,6 +60,8 @@ public:
    }
 
    void OnFvgDetected() { m_s.fvgs_detected++; }
+   void OnFvgCorrectSide() { m_s.fvgs_correct_side++; }
+   void OnFvgSelected() { m_s.fvgs_selected++; }
    void OnFvgInvalidated() { m_s.fvgs_invalidated++; }
    void OnFvgExpired() { m_s.fvgs_expired++; }
    void OnFvgTraded() { m_s.fvgs_traded++; }
@@ -164,14 +166,19 @@ public:
       const double avg_r = (t > 0) ? m_s.total_r / (double)t : 0.0;
       const double end_bal = AccountInfoDouble(ACCOUNT_BALANCE);
       PrintFormat("%s======== BACKTEST REPORT (Target RR 1:%.1f) ========", MM_LOG_PREFIX, m_s.target_rr);
-      PrintFormat("%sFVGs detected: %d  Invalidated: %d  Expired: %d  Traded: %d", MM_LOG_PREFIX,
-                  m_s.fvgs_detected, m_s.fvgs_invalidated, m_s.fvgs_expired, m_s.fvgs_traded);
-      PrintFormat("%sValid setups: %d  Setup rejects: %d", MM_LOG_PREFIX, m_s.setups_valid, m_s.setups_rejected);
-      PrintFormat("%sOrder attempts: %d  Rejected orders: %d  Executed trades: %d", MM_LOG_PREFIX,
-                  m_s.order_attempts, m_s.orders_rejected, m_s.trades_executed);
+      PrintFormat("%sFVGs detected: %d", MM_LOG_PREFIX, m_s.fvgs_detected);
+      PrintFormat("%sFVGs correct side: %d", MM_LOG_PREFIX, m_s.fvgs_correct_side);
+      PrintFormat("%sFVGs selected: %d", MM_LOG_PREFIX, m_s.fvgs_selected);
+      PrintFormat("%sFVGs invalidated: %d", MM_LOG_PREFIX, m_s.fvgs_invalidated);
+      PrintFormat("%sFVGs expired: %d", MM_LOG_PREFIX, m_s.fvgs_expired);
+      PrintFormat("%sValid setups: %d", MM_LOG_PREFIX, m_s.setups_valid);
+      PrintFormat("%sRejected: %d", MM_LOG_PREFIX, m_s.setups_rejected);
+      PrintFormat("%sEntry model1: %d", MM_LOG_PREFIX, m_s.model1_executed);
+      PrintFormat("%sEntry model2: %d", MM_LOG_PREFIX, m_s.model2_executed);
+      PrintFormat("%sFVGs traded: %d  Order attempts: %d  Rejected orders: %d  Executed trades: %d",
+                  MM_LOG_PREFIX, m_s.fvgs_traded, m_s.order_attempts, m_s.orders_rejected, m_s.trades_executed);
       PrintFormat("%sClosed trades: %d  Wins: %d  Losses: %d  WinRate: %.2f%%", MM_LOG_PREFIX,
                   t, m_s.wins, m_s.losses, wr);
-      PrintFormat("%sExecuted model1: %d  model2: %d", MM_LOG_PREFIX, m_s.model1_executed, m_s.model2_executed);
       PrintFormat("%sProfit factor: %.3f  Expectancy: %.2f", MM_LOG_PREFIX, pf, expc);
       PrintFormat("%sMax DD: %.2f  Max consec losses: %d", MM_LOG_PREFIX, m_s.max_dd, m_s.max_consec_loss);
       PrintFormat("%sAverage R: %.3f  Total R: %.3f", MM_LOG_PREFIX, avg_r, m_s.total_r);

@@ -33,58 +33,6 @@ private:
    string              m_fib_fp;
    bool                m_logged_wait;
 
-   int FindFvgId(const ulong &ids[], const ulong id) const
-   {
-      const int n = ArraySize(ids);
-      for(int i = 0; i < n; i++)
-      {
-         if(ids[i] == id)
-            return i;
-      }
-      return -1;
-   }
-
-   void SnapshotFvgs(ulong &ids[], int &lives[]) const
-   {
-      const int n = m_fvg.Count();
-      ArrayResize(ids, n);
-      ArrayResize(lives, n);
-      for(int i = 0; i < n; i++)
-      {
-         const SMMFVG f = m_fvg.At(i);
-         ids[i] = f.id;
-         lives[i] = (int)f.life;
-      }
-   }
-
-   void AccountFvgScan(const ulong &ids[], const int &lives[])
-   {
-      if(m_stats == NULL)
-         return;
-      const int n = m_fvg.Count();
-      for(int i = 0; i < n; i++)
-      {
-         const SMMFVG f = m_fvg.At(i);
-         const int prev = FindFvgId(ids, f.id);
-         if(prev < 0)
-         {
-            m_stats.OnFvgDetected();
-            if(f.life == MM_FVG_INVALIDATED)
-               m_stats.OnFvgInvalidated();
-            else if(f.life == MM_FVG_EXPIRED)
-               m_stats.OnFvgExpired();
-         }
-         else
-         {
-            const int old_life = lives[prev];
-            if(old_life == (int)MM_FVG_VALID && f.life == MM_FVG_INVALIDATED)
-               m_stats.OnFvgInvalidated();
-            else if(old_life == (int)MM_FVG_VALID && f.life == MM_FVG_EXPIRED)
-               m_stats.OnFvgExpired();
-         }
-      }
-   }
-
    void RememberFill(const SMMEntryPlan &plan)
    {
       if(m_stats == NULL)
@@ -127,14 +75,8 @@ private:
 
    void InvalidateFVG(const string why)
    {
-      SMMFVG live;
-      const bool was_valid = (m_setup.fvg.id != 0 &&
-                               m_fvg.GetById(m_setup.fvg.id, live) &&
-                               live.life == MM_FVG_VALID);
       if(m_setup.fvg.id != 0)
-         m_fvg.MarkLife(m_setup.fvg.id, MM_FVG_INVALIDATED);
-      if(was_valid && m_stats != NULL)
-         m_stats.OnFvgInvalidated();
+         m_fvg.MarkLife(m_setup.fvg.id, MM_FVG_INVALIDATED, why);
       if(m_log != NULL)
          m_log.Fvg("Decision=INVALIDATED reason=" + why);
       GoIdle(why);
@@ -278,6 +220,8 @@ public:
       m_cd = cd;
       m_stats = stats;
       m_sym = sym;
+      if(m_fvg != NULL)
+         m_fvg.SetStats(m_stats);
    }
 
    SMMSetup Setup() const { return m_setup; }
@@ -343,13 +287,7 @@ public:
       CMMFibonacciEngine::LogOnce(m_log, fib, m_fib_fp);
 
       if(new_m15 || m_setup.fvg.id == 0)
-      {
-         ulong prev_ids[];
-         int prev_lives[];
-         SnapshotFvgs(prev_ids, prev_lives);
          m_fvg.Scan(m_sym.SymbolName(), fib, m_setup.direction);
-         AccountFvgScan(prev_ids, prev_lives);
-      }
 
       if(m_setup.fvg.id != 0)
       {
@@ -379,8 +317,17 @@ public:
          m_setup.setup_id = found.id;
          m_setup.state = MM_ST_WAITING_FOR_RETEST;
          m_logged_wait = false;
+         if(m_stats != NULL)
+            m_stats.OnFvgSelected();
          if(m_log != NULL)
          {
+            m_log.Fvg("[SELECTED]");
+            m_log.Fvg("ID=" + IntegerToString((long)found.id));
+            m_log.Fvg("Direction=" + MM_DirToString(found.direction));
+            m_log.Fvg("High=" + DoubleToString(found.high, m_sym.Spec().digits));
+            m_log.Fvg("Low=" + DoubleToString(found.low, m_sym.Spec().digits));
+            m_log.Fvg("Mid=" + DoubleToString(found.mid, m_sym.Spec().digits));
+            m_log.Fvg("Timestamp=" + TimeToString(found.timestamp, TIME_DATE | TIME_SECONDS));
             m_log.Fvg("Direction=" + MM_DirToString(found.direction));
             m_log.Fvg("FVGHigh=" + DoubleToString(found.high, m_sym.Spec().digits));
             m_log.Fvg("FVGLow=" + DoubleToString(found.low, m_sym.Spec().digits));
