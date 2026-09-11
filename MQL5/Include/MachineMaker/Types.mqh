@@ -165,6 +165,8 @@ struct SMMOpenTrade
 struct SMMStats
 {
    int    fvgs_detected;
+   int    fvgs_correct_side;
+   int    fvgs_selected;
    int    fvgs_invalidated;
    int    fvgs_expired;
    int    fvgs_traded;
