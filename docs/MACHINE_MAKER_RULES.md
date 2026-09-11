@@ -13,15 +13,15 @@ Closed-candle confirmed swings (`swing_left` / `swing_right`, default 2).
 
 Daily is computed first, then H4. Trade only when both agree and are non-neutral.
 
-Direction still uses confirmed D1/H4 swings. Fibonacci no longer uses that pair.
+Direction still uses confirmed D1/H4 swings. Fibonacci uses the last confirmed H4 swing high and last confirmed H4 swing low (same `MM_IsSwingHigh` / `MM_IsSwingLow` fractal, independent copy in FibonacciEngine).
 
 ## Fibonacci
 
-Anchors are the last available H4 extremes in `InpStructureLookback` **closed** bars (the forming H4 bar is excluded). This is **not** confirmed-swing detection (no left/right fractal).
+Anchors are the most recent confirmed H4 swing high and swing low inside `InpStructureLookback` (`swing_left` / `swing_right`, default 2). This is **not** the window max-high / min-low.
 
-- LastHigh = highest `high` in that window
-- LastLow = lowest `low` in that window
-- Chronological order of those two bars does not change the levels
+- LastHigh = last confirmed H4 Swing High
+- LastLow = last confirmed H4 Swing Low
+- After those two prices, 50/62 math is unchanged
 
 Range = LastHigh − LastLow.
 

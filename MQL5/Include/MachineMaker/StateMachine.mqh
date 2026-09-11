@@ -277,8 +277,9 @@ public:
       m_setup.direction = (dir.aligned == MM_BIAS_BULLISH) ? MM_DIR_BUY : MM_DIR_SELL;
 
       SMMFib fib;
-      if(!CMMFibonacciEngine::BuildFromLastHighLastLow(m_sym.SymbolName(), m_setup.direction,
-                                                        m_cfg.in.structure_lookback, fib))
+      if(!CMMFibonacciEngine::BuildFromLastConfirmedSwings(m_sym.SymbolName(), m_setup.direction,
+                                                           m_cfg.in.structure_lookback,
+                                                           m_cfg.in.swing_left, m_cfg.in.swing_right, fib))
       {
          GoIdle("fibonacci unavailable");
          return;
