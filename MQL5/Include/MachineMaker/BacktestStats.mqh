@@ -3,7 +3,7 @@
 
 #include "Types.mqh"
 #include "Logger.mqh"
-#include "Persistence.mqh"
+#include <MachineMaker/Persistence.mqh>
 #include "Safety.mqh"
 
 class CMMBacktestStats
@@ -48,7 +48,7 @@ public:
       ArrayResize(m_open, 0);
    }
 
-   void Init(CMMLogger *log, const double target_rr, CMMPersistence *store)
+   void Init(CMMLogger *log, const double target_rr, CMMPersistence *store = NULL)
    {
       m_log = log;
       m_store = store;
