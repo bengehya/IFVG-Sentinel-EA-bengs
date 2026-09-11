@@ -9,40 +9,55 @@
 class CMMFibonacciEngine
 {
 public:
-   // Closed H4 bars in the existing structure lookback (skip the forming bar).
-   // LastHigh = highest high in that window. LastLow = lowest low.
-   // Not a confirmed swing: no left/right fractal test.
-   static bool LastHighLastLowFromRates(const MqlRates &rates[], double &last_high, double &last_low)
+   // Most recent confirmed H4 swing high / swing low in the structure lookback.
+   // Same fractal test as DirectionEngine (MM_IsSwingHigh / MM_IsSwingLow).
+   // Series array: index 0 is the forming bar; it may sit on the right side of a just-confirmed swing.
+   static bool LastConfirmedSwingHighLowFromRates(const MqlRates &rates[],
+                                                  const int lookback,
+                                                  const int left,
+                                                  const int right,
+                                                  double &last_high,
+                                                  double &last_low)
    {
       last_high = 0.0;
       last_low = 0.0;
-      const int n = ArraySize(rates);
-      const int start = (n >= 2 ? 1 : n);
-      if(start >= n)
+      if(lookback < 1 || left < 1 || right < 1)
          return false;
-      last_high = rates[start].high;
-      last_low = rates[start].low;
-      for(int i = start + 1; i < n; i++)
+      const int n = ArraySize(rates);
+      const int end = MathMin(n - left - 1, lookback);
+      bool have_high = false;
+      bool have_low = false;
+      for(int i = right; i <= end; i++)
       {
-         if(rates[i].high > last_high)
+         if(!have_high && MM_IsSwingHigh(rates, i, left, right))
+         {
             last_high = rates[i].high;
-         if(rates[i].low < last_low)
+            have_high = true;
+         }
+         if(!have_low && MM_IsSwingLow(rates, i, left, right))
+         {
             last_low = rates[i].low;
+            have_low = true;
+         }
+         if(have_high && have_low)
+            break;
       }
-      return (last_high > last_low);
+      return (have_high && have_low && last_high > last_low);
    }
 
-   static bool LastHighLastLow(const string symbol, const ENUM_TIMEFRAMES tf, const int lookback,
-                                double &last_high, double &last_low)
+   static bool LastConfirmedSwingHighLow(const string symbol, const ENUM_TIMEFRAMES tf,
+                                         const int lookback, const int left, const int right,
+                                         double &last_high, double &last_low)
    {
       last_high = 0.0;
       last_low = 0.0;
-      if(lookback < 1)
+      if(lookback < 1 || left < 1 || right < 1)
          return false;
       MqlRates rates[];
-      if(!MM_CopyRatesSafe(symbol, tf, lookback + 1, rates))
+      const int need = lookback + left + right + 5;
+      if(!MM_CopyRatesSafe(symbol, tf, need, rates))
          return false;
-      return LastHighLastLowFromRates(rates, last_high, last_low);
+      return LastConfirmedSwingHighLowFromRates(rates, lookback, left, right, last_high, last_low);
    }
 
    static bool Build(const ENUM_MM_DIR dir, const double last_high, const double last_low, SMMFib &fib)
@@ -73,12 +88,13 @@ public:
       return true;
    }
 
-   static bool BuildFromLastHighLastLow(const string symbol, const ENUM_MM_DIR dir,
-                                          const int lookback, SMMFib &fib)
+   static bool BuildFromLastConfirmedSwings(const string symbol, const ENUM_MM_DIR dir,
+                                            const int lookback, const int left, const int right,
+                                            SMMFib &fib)
    {
       double last_high = 0.0;
       double last_low = 0.0;
-      if(!LastHighLastLow(symbol, MM_TF_H4, lookback, last_high, last_low))
+      if(!LastConfirmedSwingHighLow(symbol, MM_TF_H4, lookback, left, right, last_high, last_low))
       {
          ZeroMemory(fib);
          fib.direction = dir;

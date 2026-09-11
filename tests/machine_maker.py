@@ -48,28 +48,69 @@ def align_bias(daily: int, h4: int) -> int:
     return BIAS_NEUTRAL
 
 
-FIB_METHOD = "LAST_HIGH_LAST_LOW"
+FIB_METHOD = "LAST_CONFIRMED_SWING_HIGH_LOW"
+STRUCTURE_LOOKBACK = 80
+SWING_LEFT = 2
+SWING_RIGHT = 2
 
 
-def last_high_last_low(bars: list[dict], skip_forming: bool = True) -> tuple[float, float] | None:
-    """Newest-first series. Skip bar 0 (forming) when a closed bar exists.
+def is_swing_high(rates: list[dict], index: int, left: int, right: int) -> bool:
+    """Mirror MM_IsSwingHigh (series: 0 = newest)."""
+    n = len(rates)
+    if index - right < 0 or index + left >= n:
+        return False
+    px = rates[index]["high"]
+    for i in range(1, left + 1):
+        if rates[index + i]["high"] >= px:
+            return False
+    for i in range(1, right + 1):
+        if rates[index - i]["high"] > px:
+            return False
+    return True
 
-    LastHigh = max high in the closed window. LastLow = min low.
-    Chronological order of those two bars does not matter.
-    """
-    if not bars:
+
+def is_swing_low(rates: list[dict], index: int, left: int, right: int) -> bool:
+    """Mirror MM_IsSwingLow (series: 0 = newest)."""
+    n = len(rates)
+    if index - right < 0 or index + left >= n:
+        return False
+    px = rates[index]["low"]
+    for i in range(1, left + 1):
+        if rates[index + i]["low"] <= px:
+            return False
+    for i in range(1, right + 1):
+        if rates[index - i]["low"] < px:
+            return False
+    return True
+
+
+def last_confirmed_swing_high_low(
+    rates: list[dict],
+    lookback: int = STRUCTURE_LOOKBACK,
+    left: int = SWING_LEFT,
+    right: int = SWING_RIGHT,
+) -> tuple[float, float] | None:
+    """Most recent confirmed H4 swing high and swing low (DirectionEngine scan)."""
+    if lookback < 1 or left < 1 or right < 1 or not rates:
         return None
-    if skip_forming:
-        if len(bars) < 2:
-            return None
-        window = bars[1:]
-    else:
-        window = bars
-    if not window:
-        return None
-    last_high = max(b["high"] for b in window)
-    last_low = min(b["low"] for b in window)
-    if last_high <= last_low:
+    n = len(rates)
+    end = min(n - left - 1, lookback)
+    last_high = 0.0
+    last_low = 0.0
+    have_high = False
+    have_low = False
+    i = right
+    while i <= end:
+        if not have_high and is_swing_high(rates, i, left, right):
+            last_high = rates[i]["high"]
+            have_high = True
+        if not have_low and is_swing_low(rates, i, left, right):
+            last_low = rates[i]["low"]
+            have_low = True
+        if have_high and have_low:
+            break
+        i += 1
+    if not have_high or not have_low or last_high <= last_low:
         return None
     return last_high, last_low
 
